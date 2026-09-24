@@ -22,21 +22,27 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QLineEdit,
     QMainWindow,
+    QMessageBox,
     QMenu,
     QPlainTextEdit,
     QPushButton,
     QSystemTrayIcon,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from friday import __version__
 from friday.audio.devices import AudioDeviceError, Microphone, Speaker
+from friday.brightspace_calendar import AcademicStore, BrightspaceError, display_time
+from friday.brightspace_feed import forget_feed, save_feed
 from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
 from friday.providers.gemini_live import GeminiLiveProvider
 from friday.schedule import ScheduleStore, WorkerHealth, read_worker_health
+from friday.ui.brightspace_worker import AcademicSyncThread
 from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.voice_reminders import VoiceReminderApproval
@@ -184,8 +190,10 @@ class DesktopThread(QThread):
         reminders: bool,
         web: bool,
         max_seconds: int | None,
+        academic: bool = False,
     ) -> None:
         super().__init__()
+        self.academic = academic
         self.input_device = input_device
         self.output_device = output_device
         self.input_language = input_language
@@ -236,6 +244,7 @@ class DesktopThread(QThread):
                         None if self.input_language == "auto" else self.input_language
                     ),
                     reminder_approval=approval,
+                    enable_academic_calendar=self.academic,
                 ),
                 queue_size=settings.event_queue_size,
             )
@@ -290,6 +299,8 @@ class DesktopWindow(QMainWindow):
         self._max_seconds = max_seconds
         self._worker: DesktopThread | None = None
         self._scheduler: SchedulerThread | None = None
+        self._academic_sync: AcademicSyncThread | None = None
+        self._academic_synced_session = False
         self._scheduler_stop_requested = False
         self._scheduler_had_error = False
         self._closing = False
@@ -311,6 +322,11 @@ class DesktopWindow(QMainWindow):
         self._health_timer.timeout.connect(self._refresh_worker_status)
         self._refresh_worker_status()
         self._health_timer.start()
+        self._academic_timer = QTimer(self)
+        self._academic_timer.setInterval(30 * 60 * 1000)
+        self._academic_timer.timeout.connect(self._auto_sync_brightspace)
+        self._academic_timer.start()
+        self._display_academic_cached()
 
     @staticmethod
     def _panel() -> QFrame:
@@ -414,7 +430,7 @@ class DesktopWindow(QMainWindow):
         self.transcript.document().setMaximumBlockCount(250)
         self.transcript.setPlaceholderText("Your conversation appears here while connected.")
         transcript_layout.addWidget(self.transcript)
-        sidebar.addWidget(transcript_panel, 4)
+        sidebar.addWidget(transcript_panel, 3)
 
         reminders_panel = self._panel()
         reminders_layout = QVBoxLayout(reminders_panel)
@@ -425,7 +441,45 @@ class DesktopWindow(QMainWindow):
         self.reminder_list = QListWidget()
         self.reminder_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         reminders_layout.addWidget(self.reminder_list)
-        sidebar.addWidget(reminders_panel, 2)
+        tabs = QTabWidget()
+        tabs.addTab(reminders_panel, "Reminders")
+        academic_panel = self._panel()
+        academic_layout = QVBoxLayout(academic_panel)
+        academic_layout.setContentsMargins(12, 10, 12, 10)
+        academic_layout.setSpacing(7)
+        self.academic_status = QLabel("Brightspace: not synced")
+        self.academic_status.setObjectName("subheading")
+        self.academic_status.setWordWrap(True)
+        academic_layout.addWidget(self.academic_status)
+        self.academic_feed_input = QLineEdit()
+        self.academic_feed_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.academic_feed_input.setPlaceholderText("Paste private feed URL locally")
+        self.academic_feed_input.setToolTip(
+            "Saved to protected system storage; never sent to Gemini or logged."
+        )
+        academic_layout.addWidget(self.academic_feed_input)
+        feed_controls = QHBoxLayout()
+        self.academic_save_button = QPushButton("Save feed")
+        self.academic_save_button.clicked.connect(self._save_academic_feed)
+        feed_controls.addWidget(self.academic_save_button)
+        self.academic_sync_button = QPushButton("Sync now")
+        self.academic_sync_button.clicked.connect(self._sync_academic)
+        feed_controls.addWidget(self.academic_sync_button)
+        self.academic_forget_button = QPushButton("Remove feed")
+        self.academic_forget_button.clicked.connect(self._forget_academic_feed)
+        feed_controls.addWidget(self.academic_forget_button)
+        academic_layout.addLayout(feed_controls)
+        self.academic_auto_option = QCheckBox("Refresh every 30 min while scheduler runs")
+        self.academic_auto_option.setChecked(False)
+        academic_layout.addWidget(self.academic_auto_option)
+        self.academic_voice_option = QCheckBox("Enable read-only academic voice lookup")
+        self.academic_voice_option.setChecked(False)
+        academic_layout.addWidget(self.academic_voice_option)
+        self.academic_list = QListWidget()
+        self.academic_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        academic_layout.addWidget(self.academic_list, 1)
+        tabs.addTab(academic_panel, "Brightspace")
+        sidebar.addWidget(tabs, 3)
         content.addLayout(sidebar, 6)
         outer.addLayout(content, 1)
 
@@ -496,6 +550,7 @@ class DesktopWindow(QMainWindow):
             return
         self._quitting = True
         self._health_timer.stop()
+        self._academic_timer.stop()
         if self._scheduler is not None:
             self._scheduler.request_stop()
             self._scheduler_stop_requested = True
@@ -505,14 +560,137 @@ class DesktopWindow(QMainWindow):
         self._finish_quit()
 
     def _finish_quit(self) -> None:
-        if self._worker is not None or self._scheduler is not None:
+        if (
+            self._worker is not None or self._scheduler is not None
+            or self._academic_sync is not None
+        ):
             return
         self._health_timer.stop()
+        self._academic_timer.stop()
         if self._tray is not None:
             self._tray.hide()
         app = QApplication.instance()
         if app is not None:
             app.quit()
+
+    def _display_academic_cached(self) -> None:
+        """Read local cache only; never fetch Brightspace on desktop startup."""
+        try:
+            store = AcademicStore()
+            snapshot = store.upcoming(days=7, limit=12)
+            last = snapshot.last_success
+        except (BrightspaceError, OSError, ValueError):
+            self.academic_status.setText("Brightspace: local cache unavailable")
+            self.academic_list.clear()
+            self.academic_voice_option.setEnabled(False)
+            return
+        self.academic_list.clear()
+        for item in snapshot.items:
+            label = "Due" if item.explicit_due else "Scheduled"
+            recurrence = " · recurring series (not expanded)" if item.recurring else ""
+            self.academic_list.addItem(
+                f"{label}: {item.title}\n{display_time(item)}{recurrence}"
+            )
+        if not snapshot.items:
+            self.academic_list.addItem("No upcoming published calendar items")
+        if last:
+            try:
+                stamp = datetime.fromisoformat(last).astimezone().strftime("%I:%M %p")
+                self.academic_status.setText(
+                    f"Brightspace: cached · last sync {stamp} · feed may omit assignments"
+                )
+            except ValueError:
+                self.academic_status.setText("Brightspace: cached; sync timestamp unavailable")
+        else:
+            self.academic_status.setText("Brightspace: not synced")
+        self.academic_voice_option.setEnabled(
+            bool(last) and not self._quitting and not self._closing
+        )
+        if not last:
+            self.academic_voice_option.setChecked(False)
+
+    def _save_academic_feed(self) -> None:
+        if self._academic_sync is not None or self._quitting or self._closing:
+            return
+        entered = self.academic_feed_input.text()
+        # Never emit the URL into any UI notice, log, transcript, or exception.
+        self.academic_feed_input.clear()
+        try:
+            save_feed(entered)
+        except BrightspaceError as exc:
+            self.academic_status.setText(str(exc))
+            return
+        self.academic_status.setText(
+            "Brightspace feed saved in protected storage. Click Sync now."
+        )
+
+    def _sync_academic(self) -> None:
+        if self._academic_sync is not None or self._quitting or self._closing:
+            return
+        thread = AcademicSyncThread()
+        thread.completed.connect(self._academic_completed)
+        thread.failed.connect(self._academic_failed)
+        thread.finished.connect(self._academic_finished)
+        self._academic_sync = thread
+        self.academic_status.setText("Brightspace: synchronizing…")
+        self._academic_controls_enabled(False)
+        thread.start()
+
+    def _academic_controls_enabled(self, enabled: bool) -> None:
+        active = enabled and not self._quitting and not self._closing
+        for widget in (
+            self.academic_save_button, self.academic_sync_button,
+            self.academic_forget_button, self.academic_feed_input,
+        ):
+            widget.setEnabled(active)
+
+    def _academic_completed(self, _snapshot: object) -> None:
+        self._academic_synced_session = True
+        self._display_academic_cached()
+
+    def _academic_failed(self, message: str) -> None:
+        self._display_academic_cached()
+        self.academic_status.setText(
+            f"Brightspace sync failed: {message} Previous cache, if any, is unchanged."
+        )
+
+    def _academic_finished(self) -> None:
+        if self._academic_sync is not None:
+            self._academic_sync.deleteLater()
+            self._academic_sync = None
+        self._academic_controls_enabled(True)
+        if self._quitting:
+            self._finish_quit()
+        elif self._closing and self._worker is None and self._scheduler is None:
+            self.close()
+
+    def _auto_sync_brightspace(self) -> None:
+        if (
+            self.academic_auto_option.isChecked() and self._academic_synced_session
+            and self._scheduler is not None and not self._scheduler_stop_requested
+            and self._academic_sync is None and not self._quitting
+        ):
+            self._sync_academic()
+
+    def _forget_academic_feed(self) -> None:
+        if self._academic_sync is not None or self._quitting or self._closing:
+            return
+        answer = QMessageBox.question(
+            self, "Remove Brightspace feed",
+            "Remove the protected feed credential and locally cached academic events?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            forget_feed()
+        except BrightspaceError as exc:
+            self.academic_status.setText(str(exc))
+            return
+        self._academic_synced_session = False
+        self.academic_auto_option.setChecked(False)
+        self.academic_voice_option.setChecked(False)
+        self.academic_feed_input.clear()
+        self._display_academic_cached()
 
     def _tray_notifications_available(self) -> bool:
         return (
@@ -688,6 +866,7 @@ class DesktopWindow(QMainWindow):
             input_language=self._input_language,
             reminders=self.reminder_option.isChecked(), web=self.web_option.isChecked(),
             max_seconds=self._max_seconds,
+            academic=self.academic_voice_option.isChecked(),
         )
         self._worker = worker
         worker.message.connect(self._on_event)
@@ -796,7 +975,10 @@ class DesktopWindow(QMainWindow):
             self.hide()
             event.ignore()
             return
-        if self._worker is not None or self._scheduler is not None:
+        if (
+            self._worker is not None or self._scheduler is not None
+            or self._academic_sync is not None
+        ):
             self._closing = True
             if self._worker is not None:
                 self._worker.request("quit")
@@ -807,6 +989,7 @@ class DesktopWindow(QMainWindow):
             event.ignore()
             return
         self._health_timer.stop()
+        self._academic_timer.stop()
         event.accept()
 
 
