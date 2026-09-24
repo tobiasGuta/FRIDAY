@@ -199,3 +199,17 @@ def test_http_rejects_large_decompressed_body_and_never_redirects():
     with httpx.Client(transport=httpx.MockTransport(oversized)) as client:
         with pytest.raises(BrightspaceError, match="size limit"):
             fetch_feed(URL, client=client)
+
+
+def test_replacing_feed_erases_previous_course_cache(tmp_path):
+    vault = FakeVault()
+    store = AcademicStore(tmp_path / "academic.sqlite3")
+    first = URL
+    second = "https://brightspace.cuny.edu/d2l/le/calendar/feed/other?token=synthetic"
+    save_feed(first, vault=vault, store=store)
+    store.replace(parse_calendar(SAMPLE))
+    assert store.path.exists()
+    save_feed(second, vault=vault, store=store)
+    assert load_feed(vault=vault) == second
+    assert not store.path.exists()
+    assert store.snapshot().items == ()
