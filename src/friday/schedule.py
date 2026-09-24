@@ -17,6 +17,7 @@ from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 from uuid import uuid4
 
 MAX_TEXT = 200
@@ -338,25 +339,7 @@ class ScheduleStore:
             )
 
     def worker_health(self, *, now: float | None = None) -> WorkerHealth:
-        """Only a live matching lease can be reported as an active worker."""
-        current = time.time() if now is None else now
-        with self._connect() as db:
-            row = db.execute(
-                """SELECT owner.token AS owner_token, owner.expires_at,
-                          health.token AS health_token, health.calendar_enabled,
-                          health.calendar_state, health.last_attempt, health.last_success
-                   FROM scheduler_owner AS owner
-                   LEFT JOIN worker_health AS health ON health.id = 1
-                   WHERE owner.id = 1"""
-            ).fetchone()
-        if row is None or row["expires_at"] <= current:
-            return WorkerHealth(False, False, "stopped")
-        if row["owner_token"] != row["health_token"]:
-            return WorkerHealth(True, False, "unknown")
-        return WorkerHealth(
-            True, bool(row["calendar_enabled"]), row["calendar_state"],
-            row["last_attempt"], row["last_success"],
-        )
+        return read_worker_health(self.path, now=now)
 
     def claim_due(self, *, now: float | None = None, limit: int = 10) -> list[tuple[Schedule, str]]:
         current = time.time() if now is None else now
@@ -404,6 +387,47 @@ class ScheduleStore:
                    WHERE id = ? AND status = 'delivering' AND claim_token = ?""",
                 (MAX_ATTEMPTS, current + 15, item_id, token),
             )
+
+
+def read_worker_health(
+    path: Path | None = None, *, now: float | None = None
+) -> WorkerHealth:
+    """Read-only observation: opening desktop never creates or migrates the database."""
+    database = default_database_path() if path is None else Path(path)
+    if not database.is_file():
+        return WorkerHealth(False, False, "stopped")
+    current = time.time() if now is None else now
+    uri = "file:" + quote(database.resolve().as_posix(), safe="/:") + "?mode=ro"
+    with closing(sqlite3.connect(uri, uri=True, timeout=0.2)) as db:
+        db.row_factory = sqlite3.Row
+        try:
+            row = db.execute(
+                """SELECT owner.token AS owner_token, owner.expires_at,
+                          health.token AS health_token, health.calendar_enabled,
+                          health.calendar_state, health.last_attempt, health.last_success
+                   FROM scheduler_owner AS owner
+                   LEFT JOIN worker_health AS health ON health.id = 1
+                   WHERE owner.id = 1"""
+            ).fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table: worker_health" not in str(exc):
+                raise
+            # A worker from an older version may hold the lease, but cannot report sync health.
+            owner = db.execute(
+                "SELECT token, expires_at FROM scheduler_owner WHERE id = 1"
+            ).fetchone()
+            return WorkerHealth(
+                bool(owner and owner["expires_at"] > current), False,
+                "unknown" if owner and owner["expires_at"] > current else "stopped",
+            )
+    if row is None or row["expires_at"] <= current:
+        return WorkerHealth(False, False, "stopped")
+    if row["owner_token"] != row["health_token"]:
+        return WorkerHealth(True, False, "unknown")
+    return WorkerHealth(
+        True, bool(row["calendar_enabled"]), row["calendar_state"],
+        row["last_attempt"], row["last_success"],
+    )
 
 
 def dispatch_due(
