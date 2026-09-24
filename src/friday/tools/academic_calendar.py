@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from friday.brightspace_calendar import AcademicStore, BrightspaceError, display_time, local_date
+from friday.brightspace_calendar import (
+    AcademicStore,
+    BrightspaceError,
+    display_time,
+    local_date,
+    source_labeled_due,
+)
 from friday.tools.registry import NoArguments, ToolRegistry, ToolSpec
 
 ACADEMIC_TOOL_NAME = "get_academic_calendar"
@@ -37,6 +43,7 @@ def register_academic_calendar(
                     "calendar_date": local_date(item),
                     "kind": item.kind,
                     "explicit_due": item.explicit_due,
+                    "source_labeled_due": source_labeled_due(item),
                     "recurring_series": item.recurring,
                 }
                 for item in result.items
@@ -51,6 +58,8 @@ def register_academic_calendar(
                 "CUNY Brightspace calendar. Does not fetch the internet, submit work, "
                 "or access grades. Only task DUE is an explicit deadline; VEVENT DTSTART "
                 "is a scheduled event, not proof of a submission deadline. "
+                "source_labeled_due reports a title ending in ' - Due' as a "
+                "Brightspace source label only, not a verified due timestamp. "
                 "Empty results do not prove there are no assignments."
             ),
             arguments=NoArguments,
