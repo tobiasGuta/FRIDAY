@@ -74,6 +74,13 @@ QPlainTextEdit, QListWidget { background: #10192A; border: 1px solid #2A3A54;
                              font-size: 13px; }
 QCheckBox { color: #B7C8E0; spacing: 7px; font-size: 12px; }
 QCheckBox:disabled { color: #687B95; }
+QLineEdit { background: #10192A; border: 1px solid #2A3A54; color: #E0EAFA;
+            border-radius: 9px; padding: 7px 10px; }
+QLineEdit:disabled { color: #687B95; }
+QTabWidget::pane { border: 1px solid #283A58; border-radius: 9px; }
+QTabBar::tab { background: #151E31; color: #B7C8E0; border: 1px solid #283A58;
+               padding: 7px 15px; }
+QTabBar::tab:selected { background: #233450; color: #EEF5FF; }
 """
 
 
