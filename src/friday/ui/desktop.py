@@ -630,12 +630,13 @@ class DesktopWindow(QMainWindow):
             self.hide()
             event.ignore()
             return
-        if self._worker is not None and self._worker.isRunning():
+        if self._worker is not None:
             self._closing = True
             self._worker.request("quit")
             self._set_state("Disconnecting")
             event.ignore()
             return
+        self._health_timer.stop()
         event.accept()
 
 
