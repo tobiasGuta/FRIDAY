@@ -95,7 +95,9 @@ def forget_feed(*, vault=None, store: AcademicStore | None = None) -> None:
     try:
         cache.unlink(missing_ok=True)
     except OSError as exc:
-        raise BrightspaceError("Credential removed, but local cached data could not be erased.") from exc
+        raise BrightspaceError(
+            "Credential removed, but local cached data could not be erased."
+        ) from exc
 
 
 def fetch_feed(url: str, *, client: httpx.Client | None = None) -> bytes:
@@ -130,7 +132,9 @@ def fetch_feed(url: str, *, client: httpx.Client | None = None) -> bytes:
         except BrightspaceError:
             raise
         except httpx.HTTPError as exc:
-            raise BrightspaceError("Calendar network request failed; cached data is unchanged.") from exc
+            raise BrightspaceError(
+                "Calendar network request failed; cached data is unchanged."
+            ) from exc
 
     if client is not None:
         return read(client)
