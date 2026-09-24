@@ -60,6 +60,7 @@ class Schedule:
     due_at: float
     status: str
     attempts: int
+    revision: int = 0
 
     @property
     def due_utc(self) -> str:
@@ -91,6 +92,12 @@ class ScheduleStore:
                     delivered_at REAL
                 )
             """)
+            # Existing v0.4.1 databases need a non-destructive migration.
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(schedules)")}
+            if "revision" not in columns:
+                db.execute(
+                    "ALTER TABLE schedules ADD COLUMN revision INTEGER NOT NULL DEFAULT 0"
+                )
             db.execute("""
                 CREATE INDEX IF NOT EXISTS schedules_due_idx
                 ON schedules(status, due_at, available_at)
@@ -119,6 +126,7 @@ class ScheduleStore:
         return Schedule(
             id=row["id"], kind=row["kind"], text=row["text"],
             due_at=row["due_at"], status=row["status"], attempts=row["attempts"],
+            revision=row["revision"] if "revision" in row.keys() else 0,
         )
 
     def create(
@@ -161,6 +169,67 @@ class ScheduleStore:
                     {where} ORDER BY due_at, id LIMIT 100"""
             ).fetchall()
         return [self._record(row) for row in rows]
+
+    def list_pending_reminders(
+        self, *, limit: int = 26, now: float | None = None
+    ) -> list[Schedule]:
+        """Bounded future reminders only; timers cannot hide relevant entries."""
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Reminder listing limit must be 1–100")
+        current = time.time() if now is None else now
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT id, kind, text, due_at, status, attempts, revision
+                   FROM schedules WHERE kind = 'reminder' AND status = 'pending'
+                   AND due_at > ? ORDER BY due_at, id LIMIT ?""",
+                (current, limit),
+            ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def get_pending_reminder(self, item_id: str, *, now: float | None = None) -> Schedule | None:
+        """Return an exact active reminder, never a timer or expired item."""
+        current = time.time() if now is None else now
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT id, kind, text, due_at, status, attempts, revision
+                   FROM schedules WHERE id = ? AND kind = 'reminder'
+                   AND status = 'pending' AND due_at > ?""",
+                (item_id, current),
+            ).fetchone()
+        return self._record(row) if row else None
+
+    def edit_reminder(
+        self, original: Schedule, *, text: str, when: str, now: float | None = None
+    ) -> Schedule | None:
+        """Compare-and-swap: an outdated draft cannot overwrite a newer edit."""
+        current = time.time() if now is None else now
+        due = parse_due(when, now=current)
+        if not isinstance(text, str) or not 1 <= len(text.strip()) <= MAX_TEXT:
+            raise ValueError("Schedule text must contain 1–200 characters")
+        if any(ord(c) < 32 or ord(c) == 127 for c in text):
+            raise ValueError("Reminder text must not contain control characters")
+        with self._connect() as db, db:
+            changed = db.execute(
+                """UPDATE schedules SET text = ?, due_at = ?, revision = revision + 1
+                   WHERE id = ? AND kind = 'reminder' AND status = 'pending'
+                   AND revision = ? AND due_at > ?""",
+                (text.strip(), due.timestamp(), original.id, original.revision, current),
+            ).rowcount
+        return self.get_pending_reminder(original.id, now=current) if changed else None
+
+    def cancel_reminder_if_unchanged(
+        self, original: Schedule, *, now: float | None = None
+    ) -> bool:
+        """Cancel only the approved version, not a reminder edited meanwhile."""
+        current = time.time() if now is None else now
+        with self._connect() as db, db:
+            changed = db.execute(
+                """UPDATE schedules SET status = 'cancelled', revision = revision + 1
+                   WHERE id = ? AND kind = 'reminder' AND status = 'pending'
+                   AND revision = ? AND due_at > ?""",
+                (original.id, original.revision, current),
+            ).rowcount
+        return changed == 1
 
     def cancel(self, item_id: str) -> bool:
         with self._connect() as db, db:

@@ -136,8 +136,18 @@ def _show_reminder_result(result: dict[str, str] | None) -> None:
             f"REMINDER CREATED [{result['id']}]: {result['text']} — {result['at']}. "
             "The worker will sync it if --calendar-sync is running."
         )
+    elif result.get("status") == "updated":
+        print(
+            f"REMINDER UPDATED [{result['id']}]: {result['text']} — {result['at']}. "
+            "The worker will update its Google event if --calendar-sync is running."
+        )
+    elif result.get("status") == "cancelled":
+        print(
+            f"REMINDER CANCELLED [{result['id']}]: {result['text']} — {result['at']}. "
+            "The worker will remove its linked Google event if --calendar-sync is running."
+        )
     elif result.get("status") == "rejected":
-        print("REMINDER REJECTED. No schedule was created.")
+        print("REMINDER REJECTED. No schedule was changed.")
     elif result.get("error") == "no_pending_reminder":
         print("No reminder proposal is pending.")
     else:
@@ -477,6 +487,28 @@ def _schedule_cli(args: argparse.Namespace) -> int:
             )
             print(f"{item.id} [{item.status}] {item.kind}: {item.text} — {local_due}")
         return 0
+    elif action == "edit":
+        if args.text is None and args.at is None:
+            raise ValueError("Specify --text and/or --at for a reminder edit")
+        original = store.get_pending_reminder(args.id)
+        if original is None:
+            print("No pending future reminder with that ID.")
+            return 1
+        requested_at = args.at or datetime.fromtimestamp(
+            original.due_at
+        ).astimezone().isoformat(timespec="seconds")
+        updated = store.edit_reminder(
+            original, text=args.text if args.text is not None else original.text,
+            when=requested_at,
+        )
+        if updated is None:
+            print("Reminder changed or expired while editing; no edit applied.")
+            return 1
+        local_due = datetime.fromtimestamp(updated.due_at).astimezone().isoformat(
+            timespec="seconds"
+        )
+        print(f"Updated reminder {updated.id}: {updated.text} — due {local_due}")
+        return 0
     elif action == "cancel":
         if not store.cancel(args.id):
             print("No pending schedule with that ID (it may be processing or completed).")
@@ -575,6 +607,10 @@ def build_parser() -> argparse.ArgumentParser:
     add = actions.add_parser("add", help="Add a one-time reminder")
     add.add_argument("--at", required=True, help="ISO date/time with UTC offset")
     add.add_argument("--text", required=True, help="Reminder message")
+    edit = actions.add_parser("edit", help="Edit a pending future reminder by exact ID")
+    edit.add_argument("id", help="ID displayed by 'schedule list'")
+    edit.add_argument("--at", help="New ISO date/time with UTC offset")
+    edit.add_argument("--text", help="New reminder text")
     listing = actions.add_parser("list", help="List upcoming reminders and timers")
     listing.add_argument("--all", action="store_true", help="Include delivered and cancelled")
     cancel = actions.add_parser("cancel", help="Cancel a pending schedule")

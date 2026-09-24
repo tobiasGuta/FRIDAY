@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.2 — Voice reminder listing, editing, cancellation (Windows acceptance pending)
+
+- Add read-only `get_reminders` and two non-mutating draft functions for edits
+  and cancellations; exact IDs must come from the latest list.
+- Require human approval in a separate voice turn or `/approve`; a stale draft
+  cannot overwrite a reminder changed by another process.
+- Add a SQLite revision migration preserving v0.4.1 reminders, exact-ID edit
+  CLI, and durable in-place Google Calendar event updates.
+- Verify linked Google event ownership before edits, retain the same event ID,
+  and retry unacknowledged revisions during worker sync.
+- Test old-schema migration, optimistic concurrency, ambiguous reminder names,
+  denial paths, and fake-Google updates without accessing real credentials.
+
+
 ## 0.4.1 — Opt-in voice reminder drafts and approval (Windows acceptance pending)
 
 - Add `talk --reminders` with typed, ephemeral, one-at-a-time reminder drafts.

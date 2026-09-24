@@ -34,6 +34,8 @@ class FakeCalendarAPI:
         self.events_by_id = {}
         self.insert_calls = 0
         self.delete_calls = 0
+        self.update_calls = 0
+        self.update_error = None
         self.insert_error = None
         self.mismatched_conflict = False
         self._result = None
@@ -62,6 +64,20 @@ class FakeCalendarAPI:
         else:
             self.events_by_id[body["id"]] = deepcopy(body)
             self._result = self.events_by_id[body["id"]]
+        return self
+
+    def update(self, *, calendarId, eventId, body, sendUpdates):
+        assert calendarId == self.calendar["id"]
+        assert eventId == body["id"]
+        assert sendUpdates == "none"
+        self.update_calls += 1
+        if self.update_error is not None:
+            self._error = FakeHTTPError(self.update_error)
+        elif eventId not in self.events_by_id:
+            self._error = FakeHTTPError(404)
+        else:
+            self.events_by_id[eventId] = deepcopy(body)
+            self._result = deepcopy(body)
         return self
 
     def get(self, *, calendarId, eventId=None):
@@ -223,3 +239,88 @@ def test_token_path_and_status_do_not_reveal_credentials(tmp_path, capsys):
     assert "calendar links" in display
     assert "sensitive-test-value" not in display
     assert not (tmp_path / "token.json").samefile(db)
+
+
+def test_edit_updates_same_event_without_duplicates(tmp_path):
+    schedules, links, api = _ready(tmp_path)
+    old = schedules.reminder(_future(), "Study")
+    assert sync_calendar(links, api) == (1, 0)
+    new_time = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    updated = schedules.edit_reminder(old, text="Study cybersecurity", when=new_time)
+    assert updated is not None and updated.id == old.id and updated.revision == 1
+    assert sync_calendar(links, api) == (1, 0)
+    assert sync_calendar(links, api) == (0, 0)
+    assert api.insert_calls == 1
+    assert api.update_calls == 1
+    assert len(api.events_by_id) == 1
+    assert links.counts() == (1, 1)
+    event = api.events_by_id[event_id(old.id)]
+    assert event["summary"] == "Study cybersecurity"
+    assert event["start"]["dateTime"] == updated.due_utc
+
+
+def test_edit_failure_retries_without_duplicate_and_cancellation_still_removes(tmp_path):
+    schedules, links, api = _ready(tmp_path)
+    old = schedules.reminder(_future(), "Cancel later")
+    sync_calendar(links, api)
+    updated = schedules.edit_reminder(old, text="Changed", when=_future())
+    assert updated is not None
+    api.update_error = 503
+    with pytest.raises(CalendarSyncError, match="edit failed"):
+        sync_calendar(links, api)
+    assert links.counts() == (1, 1)
+    assert api.events_by_id[event_id(old.id)]["summary"] == "Cancel later"
+    api.update_error = None
+    assert sync_calendar(links, api) == (1, 0)
+    assert len(api.events_by_id) == 1
+    assert schedules.cancel_reminder_if_unchanged(updated)
+    assert sync_calendar(links, api) == (0, 1)
+    assert sync_calendar(links, api) == (0, 0)
+    assert api.events_by_id == {}
+
+
+def test_edit_checks_event_ownership_before_writing(tmp_path):
+    schedules, links, api = _ready(tmp_path)
+    old = schedules.reminder(_future(), "Original")
+    sync_calendar(links, api)
+    assert schedules.edit_reminder(old, text="Changed", when=_future())
+    api.mismatched_conflict = True
+    with pytest.raises(CalendarSyncError, match="does not belong"):
+        sync_calendar(links, api)
+    assert api.update_calls == 0
+
+
+def test_old_calendar_link_schema_migrates_without_losing_events(tmp_path):
+    schedules = ScheduleStore(tmp_path / "old.sqlite3")
+    with schedules._connect() as db, db:
+        db.execute("""
+            CREATE TABLE friday_calendar_links (
+                schedule_id TEXT PRIMARY KEY REFERENCES schedules(id),
+                event_id TEXT NOT NULL UNIQUE,
+                state TEXT NOT NULL CHECK(state IN ('linked', 'deleted')),
+                synced_at REAL NOT NULL
+            )
+        """)
+    links = CalendarStore(schedules)
+    with links._connect() as db:
+        columns = [row["name"] for row in db.execute(
+            "PRAGMA table_info(friday_calendar_links)"
+        )]
+    assert "synced_revision" in columns
+
+
+def test_conflict_after_unacknowledged_insert_reconciles_local_edit(tmp_path):
+    schedules, links, api = _ready(tmp_path)
+    old = schedules.reminder(_future(), "Old text")
+    # Simulate successful Google insert followed by lost SQLite acknowledgement.
+    api.events_by_id[event_id(old.id)] = event_body(old)
+    edited = schedules.edit_reminder(
+        old, text="New text", when=(datetime.now(UTC) + timedelta(days=3)).isoformat()
+    )
+    assert edited is not None
+    assert sync_calendar(links, api) == (1, 0)
+    assert api.insert_calls == 1 and api.update_calls == 1
+    assert api.events_by_id[event_id(old.id)]["summary"] == "New text"
+    assert api.events_by_id[event_id(old.id)]["start"]["dateTime"] == edited.due_utc
+    assert links.counts() == (1, 1)
+    assert sync_calendar(links, api) == (0, 0)

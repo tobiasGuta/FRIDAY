@@ -74,7 +74,7 @@ Press **Enter** to activate the microphone, speak, and press **Enter** again to 
 **Turn sequencing and playback (v0.3.1):** After stopping the microphone, wait for FRIDAY to finish her response. Another ordinary recording cannot begin until Gemini reports completion or interruption and the speaker buffer has drained. Extra Enter presses during playback are ignored; `/quit` remains available. A response stalls after 30 seconds without provider or actual playback progress and displays per-turn audio and event counters without logging raw audio; the configured overall session limit still applies. Long replies use bounded, lossless playback backpressure instead of discarding speech when Gemini sends audio faster than the speakers can play it. Gemini server-side VAD is disabled for `talk`; FRIDAY sends explicit activity start/end around captured PCM. The separate text `live` diagnostic still uses the default Gemini activity mode. This is still toggle-to-talk, not hands-free barge-in. Use headphones to minimize speaker-to-microphone echo; acoustic echo cancellation is not implemented.
 
 
-### Voice reminder approval — opt-in (v0.4.1)
+### Voice reminder management — opt-in (v0.4.2)
 
 Start the independent scheduler with Google Calendar sync in one terminal:
 
@@ -105,8 +105,33 @@ the terminal's **REMINDER CREATED** message and `schedule list` are authoritativ
 The worker publishes approved future reminders on startup and approximately
 every 60 seconds. Voice mode does not directly call Google and does not need
 your Google credentials. Existing `talk` sessions without `--reminders` keep
-their read-only model tool surface. This first slice is for one-time reminders;
-no recurring schedules, edits or two-way mobile sync are implemented.
+their read-only model tool surface. You can also ask "What reminders do I have?", "Move my study reminder
+from 7 PM to 8 PM", "Change the text of my study reminder", or "Cancel my
+study reminder". FRIDAY first lists pending reminders and selects their exact
+IDs. If multiple records match, she should ask which date and time you mean.
+An edit/cancel is only a **draft**, with the original reminder and proposed
+change displayed in the terminal. Confirm in a **new** voice turn with "Yes"
+or type `/approve`; use `/reject` to discard. An approved edit retains its
+original SQLite ID and updates the **same Google Calendar event** at the next
+worker sync; cancellation removes its linked event. The app refuses a stale
+approval if another process edited/cancelled the reminder first. Old SQLite
+files are upgraded non-destructively with revision tracking. Only pending,
+future one-time reminders can be edited/cancelled in voice mode. Timers and
+already-delivered reminders cannot be modified. Edits made directly in Google
+Calendar do not flow back to SQLite.
+
+You can also edit a pending reminder locally with its exact ID:
+
+```powershell
+python -m friday schedule list
+python -m friday schedule edit REMINDER_ID --at "2026-09-27T20:00:00-04:00"
+python -m friday schedule edit REMINDER_ID --text "Updated study topic"
+python -m friday schedule cancel REMINDER_ID
+```
+
+Replace the example time and ID with the actual future time and ID. There
+are still no recurring schedules, two-way mobile editing, or automatic phone
+push guarantees.
 
 ### iPhone calendar view — opt-in Google Calendar sync (v0.4.0)
 
