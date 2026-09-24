@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.3 — Voice reliability and explicit recovery (Windows acceptance pending)
+
+- Detect unexpected Gemini event-stream termination, failed audio sends and
+  mid-turn microphone inactivation without waiting for the Stop button.
+- Close microphone, speaker and Live session on failure, discard unapproved
+  drafts, and retain the independent desktop-managed scheduler.
+- Show distinct Connection lost, Audio unavailable and Session expired states.
+  Reconnect is a deliberate button action that creates a new Live session; no
+  automatic API usage and no false claim of preserved provider context.
+- Warn shortly before the configured session duration limit; disallow new
+  turns after expiry and allow an in-progress spoken reply up to 30 seconds
+  of bounded completion time. Force local teardown at the hard limit.
+- Keep manual press-to-talk, existing tool permissions, approval gate, CLI
+  commands and no persisted raw audio or conversation memory.
+- Add fake-provider, fake-device and headless GUI regressions. Windows
+  hardware/long-running headset acceptance remains pending.
+
+
 ## 0.5.2 — Desktop-managed scheduler (Windows acceptance pending)
 
 - Add explicit Start/Stop scheduler controls to the existing desktop window.

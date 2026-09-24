@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import Protocol
 
+from friday.audio.devices import AudioDeviceError
 from friday.core.session import SessionManager
+
+SEND_DRAIN_TIMEOUT_SECONDS = 5.0
 
 
 class AudioInput(Protocol):
@@ -30,6 +33,17 @@ class VoiceTurns:
         self.awaiting_response = False
         self.sent_frames = 0
         self.sent_bytes = 0
+
+    @property
+    def sender_task(self) -> asyncio.Task[None] | None:
+        """Observe capture failures immediately, not only after Stop is clicked."""
+        return self._sender
+
+    def check_microphone(self) -> None:
+        """Use the optional hardware health probe without changing fake providers."""
+        check = getattr(self.microphone, "check_health", None)
+        if self.recording and check is not None:
+            check()
 
     async def start(self) -> None:
         if self.recording:
@@ -62,8 +76,12 @@ class VoiceTurns:
         self.microphone.stop()
         sender, self._sender = self._sender, None
         if sender is not None:
-            # A failed sender must not silently signal a successfully delivered turn.
-            await sender
+            # Give queued microphone frames a bounded chance to reach Gemini.
+            # Never send activity_end after a failed or stalled audio sender.
+            try:
+                await asyncio.wait_for(sender, timeout=SEND_DRAIN_TIMEOUT_SECONDS)
+            except TimeoutError as exc:
+                raise AudioDeviceError("Microphone audio send stalled") from exc
         # Do not admit another recording until Gemini finishes and playback drains.
         self.awaiting_response = True
         await self.manager.end_activity()
@@ -81,5 +99,10 @@ class VoiceTurns:
                 await self._sender
             except asyncio.CancelledError:
                 pass
-            self._sender = None
+            except Exception:
+                # A failed sender is reported by stop() or the active-turn
+                # watchdog; shutdown must still close the microphone.
+                pass
+            finally:
+                self._sender = None
         self.microphone.stop()

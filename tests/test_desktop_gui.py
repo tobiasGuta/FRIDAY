@@ -270,3 +270,84 @@ def test_hidden_desktop_keeps_owned_scheduler_alive(monkeypatch):
         window._scheduler = None
         window._tray = None
         window.close()
+
+
+def test_recovery_waits_for_thread_exit_and_requires_click(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._on_event("recovery", "connection")
+        window._on_event("status", "Disconnected")
+        window._worker_finished()
+        assert window.status.text() == "Connection lost"
+        assert window.connect_button.text() == "Reconnect"
+        assert window.connect_button.isEnabled()
+        assert not window.mic_button.isEnabled()
+        assert window._worker is None  # No automatic new paid session.
+        window._last_recovery = "audio"
+        window._worker_finished()
+        assert window.status.text() == "Audio unavailable"
+        assert window.connect_button.text() == "Reconnect"
+        window._last_recovery = "expired"
+        window._worker_finished()
+        assert window.status.text() == "Session expired"
+        assert window.connect_button.text() == "Reconnect"
+    finally:
+        window.close()
+
+
+def test_recovery_clear_on_explicit_new_connection(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+
+    class FakeSignal:
+        def connect(self, _listener):
+            pass
+
+    class FakeThread:
+        def __init__(self, **_kwargs):
+            self.message = FakeSignal()
+            self.finished = FakeSignal()
+            self.started = False
+
+        def start(self):
+            self.started = True
+
+    monkeypatch.setattr(desktop, "DesktopThread", FakeThread)
+    try:
+        assert app is not None
+        window._last_recovery = "connection"
+        window._set_state("Connection lost")
+        window._connect_or_disconnect()
+        assert window._worker is not None and window._worker.started
+        assert window._last_recovery is None
+        assert "Previous Live context is not restored" in window.transcript.toPlainText()
+    finally:
+        window._worker = None
+        window.close()
+
+
+def test_voice_recovery_does_not_stop_separate_desktop_scheduler():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+
+    class OwnedScheduler:
+        def __init__(self):
+            self.stopped = False
+
+        def request_stop(self):
+            self.stopped = True
+
+    scheduler = OwnedScheduler()
+    try:
+        assert app is not None
+        window._scheduler = scheduler
+        window._on_event("recovery", "connection")
+        window._worker_finished()
+        assert window.status.text() == "Connection lost"
+        assert window._scheduler is scheduler
+        assert not scheduler.stopped
+    finally:
+        window._scheduler = None
+        window.close()

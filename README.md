@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.5.2 adds an explicitly controlled in-app scheduler with tray alerts, so a separate PowerShell window is no longer required while FRIDAY is running.**
+A harness-first personal AI assistant. **v0.5.3 adds explicit voice-session recovery and microphone failure detection while preserving the desktop-managed scheduler.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.5.2)
+## What works today (v0.5.3)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -44,7 +44,7 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
-## FRIDAY desktop interface (v0.5.2)
+## FRIDAY desktop interface (v0.5.3)
 
 The optional PySide6 shell provides click-to-talk, an animated voice orb, plain-text
 transcripts, an upcoming-reminders list and app-owned **Confirm / Cancel** controls.
@@ -92,6 +92,33 @@ before the app exits. If no system tray is available, closing the window retains
 the previous graceful disconnect/exit behavior. Disconnect still closes the
 voice session while leaving the application window available. There is no
 always-on microphone or wake word.
+
+### Voice reliability and manual recovery (v0.5.3)
+
+If Gemini Live disconnects unexpectedly, the audio input stops, or the microphone
+stream becomes inactive mid-turn, FRIDAY closes the affected voice session and
+displays a recoverable state: **Connection lost**, **Audio unavailable**, or
+**Session expired**. The button becomes **Reconnect** only after the old worker
+has finished. You decide when to reconnect; FRIDAY never silently makes another
+potentially paid Gemini connection. The separate desktop scheduler remains active.
+
+After reconnecting, this is a **new Live session**, not a resumed conversation.
+FRIDAY does not replay microphone data, recover a partial spoken answer, or
+carry an unapproved reminder draft into the new connection. Confirmed SQLite
+reminders are unaffected. If Windows changes the microphone device index after
+unplug/replug, use `python -m friday devices` and relaunch with the correct
+`--input-device` selection (or leave the index unspecified for the system default).
+
+Sessions remain bounded by `FRIDAY_MAX_SESSION_SECONDS` (default 300 seconds,
+maximum 3600) or the `--max-seconds` desktop override. FRIDAY warns shortly
+before expiry; no new turn starts after the limit, and an already in-progress
+spoken reply gets at most 30 seconds of additional completion time before
+the connection closes. A recording still active at the limit is stopped rather
+than sent or approved automatically. Reconnect manually to continue.
+
+This is recovery and cleanup, **not** automatic reconnect, continuous
+hands-free listening, or conversation-memory persistence. Real Windows unplug,
+network-loss, and extended-session acceptance are release checks.
 
 ### Desktop scheduler (v0.5.2)
 

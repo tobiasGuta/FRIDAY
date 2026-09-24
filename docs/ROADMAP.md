@@ -102,6 +102,19 @@
 - No Windows service or auto-start at login; a separate CLI worker remains
   available when FRIDAY is fully exited. Real Windows acceptance pending.
 
+## v0.5.3 — Voice reliability & manual recovery
+
+- Observe failed capture sender and inactive microphone stream while recording;
+  stop local devices and close the Live session without waiting for user Stop.
+- Treat unexpected provider closure and time-limit expiry as distinct UI states;
+  make Reconnect an explicit human action, not an automatic API connection.
+- Warn before the configured duration limit, avoid admitting new turns after it,
+  and allow only a bounded 30-second tail for a reply already being spoken.
+- Retain desktop-managed scheduler and confirmed reminders; discard unapproved
+  voice drafts on session shutdown. Do not persist raw audio or conversation history.
+- Fake provider/audio/Qt tests; Windows network/headset and longer-session
+  acceptance required before merging.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

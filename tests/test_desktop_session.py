@@ -3,6 +3,9 @@
 import asyncio
 from datetime import datetime, timedelta
 
+import pytest
+
+from friday.audio.devices import AudioDeviceError
 from friday.core.events import EventKind, VoiceEvent
 from friday.core.session import SessionManager
 from friday.schedule import ScheduleStore
@@ -195,3 +198,156 @@ def test_draft_display_uses_original_values_for_cancel_and_edit(tmp_path):
     assert view["id"] == item.id
     assert view["before_text"] == "Study"
     assert store.get_pending_reminder(item.id) is not None
+
+
+def test_provider_failure_stops_voice_without_auto_reconnect():
+    async def scenario():
+        provider = FakeAudioProvider()
+        mic = FakeMicrophone()
+        speaker = FakeSpeaker()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), mic, speaker, approval=None,
+            emit=lambda kind, value: events.append((kind, value)), max_seconds=30,
+        )
+        task = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        await provider.events_queue.put(
+            VoiceEvent(EventKind.ERROR, text="Provider event stream ended")
+        )
+        await asyncio.wait_for(task, 2)
+        assert provider.closed and speaker.closed and not mic.recording
+        assert ("recovery", "connection") in events
+        assert events[-1] == ("status", "Disconnected")
+        assert events.count(("status", "Connecting")) == 1
+
+    asyncio.run(scenario())
+
+
+def test_microphone_stream_failure_is_detected_without_stop_click():
+    class BrokenMicrophone(FakeMicrophone):
+        def check_health(self):
+            if self.recording:
+                raise AudioDeviceError("Simulated unplug")
+
+    async def scenario():
+        provider = FakeAudioProvider()
+        mic = BrokenMicrophone()
+        speaker = FakeSpeaker()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), mic, speaker, approval=None,
+            emit=lambda kind, value: events.append((kind, value)), max_seconds=30,
+        )
+        task = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        controller.request("start")
+        await _wait_for(events, "status", "Listening")
+        await asyncio.wait_for(task, 2)
+        assert not mic.recording and provider.closed and speaker.closed
+        assert ("recovery", "audio") in events
+        assert not any("Simulated unplug" in str(value) for _, value in events)
+        assert events[-1] == ("status", "Disconnected")
+
+    asyncio.run(scenario())
+
+
+def test_failed_audio_sender_is_detected_while_still_recording():
+    class FailingProvider(FakeAudioProvider):
+        async def send_audio(self, pcm):
+            raise OSError("secret upstream error")
+
+    async def scenario():
+        provider = FailingProvider()
+        mic = FakeMicrophone()
+        speaker = FakeSpeaker()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), mic, speaker, approval=None,
+            emit=lambda kind, value: events.append((kind, value)), max_seconds=30,
+        )
+        task = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        controller.request("start")
+        await _wait_for(events, "status", "Listening")
+        await mic.queue.put(bytes([1, 0]))
+        await asyncio.wait_for(task, 2)
+        assert not mic.recording and provider.closed and speaker.closed
+        assert ("recovery", "connection") in events
+        assert not any("secret upstream error" in str(value) for _, value in events)
+
+    asyncio.run(scenario())
+
+
+def test_user_disconnect_does_not_offer_recovery():
+    async def scenario():
+        provider = FakeAudioProvider()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), FakeMicrophone(), FakeSpeaker(), approval=None,
+            emit=lambda kind, value: events.append((kind, value)), max_seconds=30,
+        )
+        task = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        controller.request("quit")
+        await asyncio.wait_for(task, 2)
+        assert not any(kind == "recovery" for kind, _ in events)
+
+    asyncio.run(scenario())
+
+
+def test_session_expiry_warns_and_requires_new_explicit_connection():
+    async def scenario():
+        provider = FakeAudioProvider()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), FakeMicrophone(), FakeSpeaker(), approval=None,
+            emit=lambda kind, value: events.append((kind, value)), max_seconds=5,
+        )
+        await asyncio.wait_for(controller.run(), timeout=8)
+        assert ("recovery", "expired") in events
+        assert any(
+            kind == "notice" and "nearing its time limit" in str(value)
+            for kind, value in events
+        )
+        assert events.count(("status", "Connecting")) == 1
+        assert provider.closed
+        assert events[-1] == ("status", "Disconnected")
+
+    asyncio.run(scenario())
+
+
+def test_failure_discards_pending_draft_without_writing_sqlite(tmp_path):
+    async def scenario():
+        store = ScheduleStore(tmp_path / "recovery-draft.sqlite3")
+        approval = VoiceReminderApproval(store)
+        due = (datetime.now().astimezone() + timedelta(days=2)).isoformat()
+        assert approval.propose(
+            DraftReminderArguments(text="Do not save on reconnect", at=due)
+        )["status"] == "ok"
+        provider = FakeAudioProvider()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), FakeMicrophone(), FakeSpeaker(),
+            approval=approval, emit=lambda k, v: events.append((k, v)), max_seconds=30,
+        )
+        task = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        await provider.events_queue.put(VoiceEvent(EventKind.ERROR, text="stream lost"))
+        await asyncio.wait_for(task, 2)
+        assert approval.pending() is None
+        assert store.list_items() == []
+        assert ("draft", None) in events
+        assert ("recovery", "connection") in events
+
+    asyncio.run(scenario())
+
+
+def test_desktop_session_rejects_unbounded_duration():
+    for invalid in (4, 3601):
+        with pytest.raises(ValueError, match="5 to 3600"):
+            DesktopVoiceSession(
+                SessionManager(FakeAudioProvider()),
+                FakeMicrophone(), FakeSpeaker(), approval=None,
+                emit=lambda *_: None, max_seconds=invalid,
+            )
