@@ -1,6 +1,6 @@
 """Synthetic model-tool boundary: no network, credentials or provider SDK."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from friday.brightspace_calendar import AcademicStore, parse_calendar
 from friday.tools.academic_calendar import ACADEMIC_TOOL_NAME, register_academic_calendar
@@ -52,6 +52,6 @@ def test_upcoming_items_are_sorted_and_bounded(tmp_path):
     store = AcademicStore(tmp_path / "local.sqlite3")
     store.replace(parse_calendar(CALENDAR))
     result = store.upcoming(
-        now=datetime(2026, 10, 5, 10, tzinfo=timezone.utc), days=7, limit=10
+        now=datetime(2026, 10, 5, 10, tzinfo=UTC), days=7, limit=10
     )
     assert [x.uid for x in result.items] == ["lecture", "deadline"]
