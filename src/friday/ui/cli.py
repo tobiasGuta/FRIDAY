@@ -346,6 +346,7 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
             enable_local_clock=True,
             enable_web_search=args.web,
             enable_weather=True,
+            input_language=None if args.input_language == "auto" else args.input_language,
             **({"reminder_approval": reminder_approval} if reminder_approval else {}),
         ),
         queue_size=settings.event_queue_size,
@@ -375,6 +376,11 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
         commands.start()
         print("FRIDAY is connected. Use headphones to avoid microphone/speaker feedback.")
         print("Press ENTER to start speaking, then ENTER again to stop. Type /quit to exit.")
+        print(
+            "Input recognition: English (US) hint; not a guarantee."
+            if args.input_language == "en-US"
+            else "Input recognition: automatic language detection."
+        )
         if args.web:
             print(
                 f"Web search enabled ({settings.search_backend}); "
@@ -634,6 +640,10 @@ def build_parser() -> argparse.ArgumentParser:
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
     talk.add_argument("--max-seconds", type=int, help="Override session duration limit")
+    talk.add_argument(
+        "--input-language", choices=("en-US", "auto"), default="en-US",
+        help="Input transcription hint (default: en-US; auto: multilingual recognition)",
+    )
     talk.add_argument(
         "--reminders", action="store_true",
         help="Opt in to voice reminder drafts with explicit human approval",

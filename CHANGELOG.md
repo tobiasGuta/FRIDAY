@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.4 — English input transcription hint (Windows acceptance pending)
+
+- Set an explicit `en-US` language hint for `talk` input transcription to
+  reduce short English utterances being detected as Spanish.
+- Preserve `--input-language auto` for multilingual recognition; text diagnostics
+  and other provider consumers keep their previous no-hint default.
+- Keep the native AUDIO response modality, microphone framing, and reminder
+  approval safeguards unchanged; the hint biases recognition, not guarantees it.
+- Add mock Live setup, real SDK schema, and CLI parser regression coverage.
+
+
 ## 0.4.3 — Consistent English voice responses (Windows acceptance pending)
 
 - Prefer American English for spoken responses and output transcripts even when
