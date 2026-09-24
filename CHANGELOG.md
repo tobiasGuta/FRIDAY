@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.2 — Desktop-managed scheduler (Windows acceptance pending)
+
+- Add explicit Start/Stop scheduler controls to the existing desktop window.
+  Calendar sync is an opt-in checkbox (unchecked by default); no OAuth browser,
+  microphone, Gemini connection, or paid Live session is started by scheduler control.
+- Reuse the independent SQLite single-worker lease and APScheduler loop inside a
+  separate Qt thread. An existing external CLI worker blocks duplicate desktop
+  startup; FRIDAY never stops a worker it did not start.
+- Deliver local due timers/reminders using system-tray notifications instead of
+  discarding console output in a hidden process. Wait for the UI to attempt a
+  notification before acknowledging a reminder; retain bounded retries if
+  the tray is unavailable. OS notification delivery is best-effort, not guaranteed.
+- Closing the desktop window to the tray leaves the worker running. Explicit
+  Quit and no-tray window shutdown cooperatively stop the owned worker and
+  release its lease; a full exit stops new local deliveries and phone sync.
+- The foreground `schedule worker --calendar-sync` and other CLI commands remain
+  unchanged. No Windows startup registration, detached orphan process,
+  auto-start, or persistent conversation memory.
+- Add offline tests for worker stop, lease safety, notification acknowledgement,
+  and desktop ownership controls; Windows hardware acceptance pending.
+
+
 ## 0.5.1 — Windows desktop lifecycle and calendar visibility (Windows acceptance pending)
 
 - Add a Windows desktop shortcut installer using the repository virtual environment's
