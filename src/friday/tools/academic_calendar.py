@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from friday.brightspace_calendar import AcademicStore, BrightspaceError, display_time
+from friday.brightspace_calendar import AcademicStore, BrightspaceError, display_time, local_date
 from friday.tools.registry import NoArguments, ToolRegistry, ToolSpec
 
 ACADEMIC_TOOL_NAME = "get_academic_calendar"
@@ -34,6 +34,7 @@ def register_academic_calendar(
                 {
                     "title": item.title,
                     "calendar_time": display_time(item),
+                    "calendar_date": local_date(item),
                     "kind": item.kind,
                     "explicit_due": item.explicit_due,
                     "recurring_series": item.recurring,
