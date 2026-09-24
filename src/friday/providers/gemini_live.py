@@ -9,8 +9,8 @@ from friday.core.events import EventKind, SearchSource, VoiceEvent
 from friday.core.provider import ProviderCapabilityError
 from friday.tools.builtins import build_builtin_registry
 from friday.tools.search_grounding import extract_search_grounding
-from friday.tools.web_search import SEARCH_TOOL_NAME, WebSearchService, register_web_search
 from friday.tools.weather import WEATHER_TOOL_NAME
+from friday.tools.web_search import SEARCH_TOOL_NAME, WebSearchService, register_web_search
 
 FRIDAY_INSTRUCTION = (
     "You are FRIDAY, Tobias's personal AI assistant. Speak naturally and concisely. "

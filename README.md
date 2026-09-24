@@ -92,7 +92,7 @@ or “Will it rain in Brooklyn, New York tomorrow?” The location **must be
 supplied explicitly**; FRIDAY must ask if you say only “What's the weather
 here?” The clock is not a geographic location. Ambiguous geocoding returns
 possible locations instead of silently picking one. The forecast provides
-° F temperatures (rendered °F), mph wind, daily high/low, conditions and maximum
+°F temperatures, mph wind, daily high/low, conditions and maximum
 daily precipitation probability (where supplied). Current conditions are shown
 only for today. Probabilities are forecasts, not promises; missing values
 are not fabricated. The app uses two fixed HTTPS endpoints, rejects redirects,

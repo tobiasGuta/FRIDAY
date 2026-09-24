@@ -19,8 +19,8 @@ from friday.providers.gemini_live import GeminiLiveProvider
 from friday.tools.builtins import build_builtin_registry
 from friday.tools.local_clock import read_local_clock
 from friday.tools.search_grounding import SearchPreview
-from friday.tools.web_search import WebSearchService
 from friday.tools.weather import WeatherArguments, WeatherService
+from friday.tools.web_search import WebSearchService
 from friday.ui.terminal import TerminalCommands
 
 
