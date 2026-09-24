@@ -266,7 +266,7 @@ def test_failed_audio_sender_is_detected_while_still_recording():
         await _wait_for(events, "status", "Ready")
         controller.request("start")
         await _wait_for(events, "status", "Listening")
-        await mic.queue.put(b"\\x01\\x00")
+        await mic.queue.put(bytes([1, 0]))
         await asyncio.wait_for(task, 2)
         assert not mic.recording and provider.closed and speaker.closed
         assert ("recovery", "connection") in events
