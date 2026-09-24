@@ -7,6 +7,7 @@ delivery is at-least-once, not exactly-once.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import threading
@@ -280,7 +281,9 @@ def work_once(
         store.release_owner(token)
 
 
-def run_worker(store: ScheduleStore) -> None:
+def run_worker(
+    store: ScheduleStore, *, calendar_sync: Callable[[], tuple[int, int]] | None = None
+) -> None:
     """APScheduler supplies the periodic tick; SQLite owns durable job state."""
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -293,6 +296,7 @@ def run_worker(store: ScheduleStore) -> None:
     if not store.acquire_owner(token):
         raise RuntimeError("Another FRIDAY scheduler worker is already active")
     lost = threading.Event()
+    logging.getLogger("apscheduler").setLevel(logging.WARNING)
     scheduler = BackgroundScheduler(timezone="UTC")
 
     def tick() -> None:
@@ -305,10 +309,34 @@ def run_worker(store: ScheduleStore) -> None:
         tick, "interval", seconds=1, id="friday-dispatch",
         coalesce=True, max_instances=1, misfire_grace_time=30,
     )
+
+    def calendar_tick() -> None:
+        if calendar_sync is None:
+            return
+        try:
+            published, removed = calendar_sync()
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "FRIDAY calendar sync failed; local reminders are unaffected. Retry later."
+            )
+        else:
+            if published or removed:
+                print(
+                    f"FRIDAY calendar sync: {published} published, {removed} removed.",
+                    flush=True,
+                )
+
+    if calendar_sync is not None:
+        scheduler.add_job(
+            calendar_tick, "interval", seconds=60, id="friday-calendar-sync",
+            coalesce=True, max_instances=1, misfire_grace_time=30,
+        )
     try:
         print("FRIDAY scheduler running; leave this terminal open. Ctrl+C to stop.")
         tick()
         scheduler.start()
+        if calendar_sync is not None:
+            calendar_tick()
         while not lost.wait(0.5):
             pass
         raise RuntimeError("FRIDAY scheduler lost its worker lease")

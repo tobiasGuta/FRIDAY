@@ -12,6 +12,15 @@ from pathlib import Path
 from friday import __version__
 from friday.audio.devices import AudioDeviceError, Microphone, Speaker, list_audio_devices
 from friday.audio.turns import VoiceTurns
+from friday.calendar_sync import (
+    CalendarStore,
+    CalendarSyncError,
+    connect_google,
+    google_service,
+    initialize_calendar,
+    sync_calendar,
+    token_path,
+)
 from friday.config import Settings
 from friday.core.events import EventKind, SearchSource, SessionState, VoiceEvent
 from friday.core.session import SessionError, SessionManager
@@ -434,13 +443,47 @@ def _schedule_cli(args: argparse.Namespace) -> int:
         return 0
     elif action == "worker":
         if args.once:
+            if args.calendar_sync:
+                raise ValueError("--calendar-sync requires the running worker, not --once")
             print(f"Delivered {work_once(store)} due schedule(s).")
             return 0
+        callback = None
+        if args.calendar_sync:
+            calendar = CalendarStore(store)
+            if not calendar.calendar_id():
+                raise CalendarSyncError("Initialize the FRIDAY calendar before enabling sync.")
+            service = google_service()
+            callback = lambda: sync_calendar(calendar, service)
         try:
-            run_worker(store)
+            run_worker(store, calendar_sync=callback)
         except KeyboardInterrupt:
             print("FRIDAY scheduler stopped.")
         return 0
+    elif action == "calendar":
+        calendar = CalendarStore(store)
+        if args.calendar_action == "status":
+            total, linked = calendar.counts()
+            print(f"Google authorization saved: {token_path().is_file()}")
+            print(f"FRIDAY calendar initialized: {calendar.calendar_id() is not None}")
+            print(f"Local calendar links: {total} ({linked} active)")
+            return 0
+        if args.calendar_action == "connect":
+            connect_google(secrets=args.client_secrets)
+            print("Google Calendar authorized locally. No calendar was created yet.")
+            return 0
+        service = google_service()
+        if args.calendar_action == "init":
+            _id, created = initialize_calendar(calendar, service)
+            print(
+                "Dedicated FRIDAY calendar created."
+                if created else "Dedicated FRIDAY calendar already initialized."
+            )
+            return 0
+        if args.calendar_action == "sync":
+            published, removed = sync_calendar(calendar, service)
+            print(f"FRIDAY calendar sync: {published} published, {removed} removed.")
+            return 0
+        return 2
     else:
         return 2
     local_due = datetime.fromtimestamp(item.due_at).astimezone().isoformat(
@@ -494,6 +537,19 @@ def build_parser() -> argparse.ArgumentParser:
     cancel.add_argument("id", help="ID displayed by 'schedule list'")
     worker = actions.add_parser("worker", help="Deliver alerts independently of voice mode")
     worker.add_argument("--once", action="store_true", help="Process currently due jobs then exit")
+    worker.add_argument(
+        "--calendar-sync", action="store_true",
+        help="Opt in to syncing Google Calendar on startup and every 60 seconds",
+    )
+    calendar = actions.add_parser("calendar", help="Opt-in Google Calendar synchronization")
+    calendar_actions = calendar.add_subparsers(dest="calendar_action", required=True)
+    connect = calendar_actions.add_parser("connect", help="Authorize using browser OAuth")
+    connect.add_argument(
+        "--client-secrets", type=Path, help="Google Desktop OAuth client JSON location",
+    )
+    calendar_actions.add_parser("init", help="Create or verify dedicated FRIDAY calendar")
+    calendar_actions.add_parser("sync", help="Publish pending reminders and cancellations once")
+    calendar_actions.add_parser("status", help="Show local calendar sync state")
     talk = sub.add_parser("talk", help="Live microphone -> Gemini -> speaker conversation")
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")

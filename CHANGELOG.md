@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0 — Optional Google Calendar sync (Windows/Google acceptance pending)
+
+- Add explicit Desktop OAuth with the narrow calendar.app.created permission.
+- Create a dedicated FRIDAY secondary calendar only when the user requests init.
+- One-way publish future pending reminders (not timers) and propagate local
+  cancellations, with deterministic event IDs and conflict verification.
+- Persist calendar/event links in the existing SQLite database; never replace
+  local reminders with remote state.
+- Add manual calendar status/connect/init/sync CLI and optional worker
+  --calendar-sync (startup and every 60 seconds); no Gemini session required.
+- Suppress APScheduler per-second INFO logging without hiding warnings.
+- Keep OAuth token outside the repository; no implicit browser or sync.
+- Add offline fake-Google regression tests. Real OAuth/iPhone validation pending.
+
+
 ## 0.3.9 — Durable scheduling foundation (Windows acceptance pending)
 
 - Add SQLite-backed one-time timers/reminders with list, cancel and delivery history.

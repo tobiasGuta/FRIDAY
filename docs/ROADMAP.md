@@ -40,7 +40,8 @@
 ## Next Phase 1 slice
 
 - v0.3.9 implements local, durable one-time schedule storage and an independent terminal-alert worker. Windows acceptance pending.
-- Next: approved voice writes and optional one-way synchronization with a dedicated FRIDAY Google Calendar for iPhone visibility. A calendar entry is not an independently running FRIDAY worker.
+- v0.4.0 adds explicit desktop OAuth, one-way synchronization to an app-created FRIDAY Google Calendar for iPhone visibility, cancellation propagation, and optional 60-second worker sync. Windows/Google acceptance pending.
+- Next: approved voice-created reminders and phone notification reliability, then recurrence and two-way editing.
 
 ## v0.3.2–v0.3.7 — Web search (Tavily backend implemented; Windows accepted)
 

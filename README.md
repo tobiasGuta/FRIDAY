@@ -74,6 +74,86 @@ Press **Enter** to activate the microphone, speak, and press **Enter** again to 
 **Turn sequencing and playback (v0.3.1):** After stopping the microphone, wait for FRIDAY to finish her response. Another ordinary recording cannot begin until Gemini reports completion or interruption and the speaker buffer has drained. Extra Enter presses during playback are ignored; `/quit` remains available. A response stalls after 30 seconds without provider or actual playback progress and displays per-turn audio and event counters without logging raw audio; the configured overall session limit still applies. Long replies use bounded, lossless playback backpressure instead of discarding speech when Gemini sends audio faster than the speakers can play it. Gemini server-side VAD is disabled for `talk`; FRIDAY sends explicit activity start/end around captured PCM. The separate text `live` diagnostic still uses the default Gemini activity mode. This is still toggle-to-talk, not hands-free barge-in. Use headphones to minimize speaker-to-microphone echo; acoustic echo cancellation is not implemented.
 
 
+### iPhone calendar view — opt-in Google Calendar sync (v0.4.0)
+
+FRIDAY can publish **pending, future one-time reminders** to a separate calendar
+named **FRIDAY** in your own Google account. Timers are not published.
+SQLite remains authoritative; Google is an optional one-way view and the Google
+Calendar app on your phone can show the same calendar. A published event is a
+transparent 15-minute placeholder with a popup reminder at its start time.
+Calendar/phone notifications depend on your Google Calendar settings; publishing
+an event does not guarantee a phone push alert.
+
+This feature is **off by default**. It never reads your primary calendar or
+your other events, and it does not request a broad all-calendars scope. Its only
+OAuth scope is `calendar.app.created`, limited to calendars FRIDAY creates.
+Editing or deleting an event in Google does not modify the local SQLite record.
+FRIDAY syncs cancellations made through `schedule cancel` by deleting linked
+Google events. Already delivered reminders remain visible as past events.
+
+Follow Google's [Calendar API Python setup](
+https://developers.google.com/workspace/calendar/api/quickstart/python):
+enable the Calendar API in your own Google Cloud project, configure an OAuth
+consent screen (External / Testing and add your Google account as a test user
+for personal testing), add the `calendar.app.created` scope, then create a
+**Desktop app** OAuth client and download its JSON. Keep it private. **Do not
+upload that JSON, the token, or your API keys to GitHub or this chat.**
+
+Install dependencies in the active project virtual environment:
+
+```powershell
+python -m pip install -e '.[gemini,voice,web,schedule,calendar,dev]'
+```
+
+Authorize explicitly (the command opens your local browser):
+
+```powershell
+python -m friday schedule calendar connect --client-secrets "C:\\Path\\To\\downloaded-client.json"
+python -m friday schedule calendar init
+python -m friday schedule calendar status
+```
+
+Credentials stay in the FRIDAY user-data directory, normally
+`%LOCALAPPDATA%\\FRIDAY\\google-token.json` on Windows. The file contains
+OAuth access/refresh tokens, **not encrypted at rest**: protect your OS account
+and do not share it. Reconnect if the grant is revoked or expires. Google's
+External/Testing OAuth refresh tokens ordinarily expire after 7 days for this
+scope; that is a Google testing-mode limitation.
+
+Create a future reminder (replace the date, time and offset with the actual
+desired value) and explicitly sync it:
+
+```powershell
+python -m friday schedule add --at "2026-09-26T19:00:00-04:00" --text "Study cybersecurity"
+python -m friday schedule calendar sync
+```
+
+On your iPhone, open **Google Calendar**, signed into the same Google account,
+and make sure the FRIDAY calendar is checked in the app's calendar menu. If it
+does not appear in the main calendar view, check the calendar's visibility in
+Google Calendar on the web. New events are not shown on your phone before the
+first successful sync. Existing synced events can still be viewed when your
+main PC is off, but new local changes require FRIDAY to run and sync.
+
+To combine background alerts and opt-in periodic calendar publishing, restart
+your existing scheduler worker with this command:
+
+```powershell
+python -m friday schedule worker --calendar-sync
+```
+
+It syncs at startup and every 60 seconds; errors leave local reminders intact.
+The standard `schedule worker` remains local-only. Google Calendar is not a
+substitute for FRIDAY's independently running reminder worker, and no Gemini
+Live session is held open for synchronization. Never start two workers for the
+same database. To stop the worker, press Ctrl+C.
+
+Google event IDs are deterministic and conflicts are verified against FRIDAY's
+private event marker before a link is saved. An uncertain initial calendar
+creation can create a secondary calendar without recording its ID; inspect
+Google Calendar before retrying `calendar init`. This release is one-way:
+phone-side edits and two-way conflict resolution remain future milestones.
+
 ### Local schedules — first foundation (v0.3.9)
 
 One-time timers and reminders now live in a separate SQLite database in your user
