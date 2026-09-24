@@ -67,6 +67,17 @@ class Schedule:
         return datetime.fromtimestamp(self.due_at, UTC).isoformat(timespec="seconds")
 
 
+@dataclass(frozen=True, slots=True)
+class WorkerHealth:
+    """Observed process lease and calendar outcome; no credentials or event contents."""
+
+    running: bool
+    calendar_enabled: bool
+    calendar_state: str
+    last_attempt: float | None = None
+    last_success: float | None = None
+
+
 class ScheduleStore:
     """One SQLite file can be shared by CLI writers and one background worker."""
 
@@ -112,6 +123,16 @@ class ScheduleStore:
             db.execute("""
                 INSERT OR IGNORE INTO scheduler_owner(id, token, expires_at)
                 VALUES (1, '', 0)
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS worker_health (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    token TEXT NOT NULL,
+                    calendar_enabled INTEGER NOT NULL,
+                    calendar_state TEXT NOT NULL,
+                    last_attempt REAL,
+                    last_success REAL
+                )
             """)
 
     @contextmanager
@@ -268,6 +289,75 @@ class ScheduleStore:
                 (token,),
             )
 
+    def start_worker_health(
+        self, token: str, *, calendar_enabled: bool, now: float | None = None
+    ) -> None:
+        """Associate health with the current owner, not a previous worker."""
+        current = time.time() if now is None else now
+        state = "waiting" if calendar_enabled else "local-only"
+        with self._connect() as db, db:
+            db.execute(
+                """INSERT INTO worker_health(
+                       id, token, calendar_enabled, calendar_state, last_attempt, last_success
+                   )
+                   SELECT 1, token, ?, ?, NULL, NULL FROM scheduler_owner
+                   WHERE id = 1 AND token = ? AND expires_at > ?
+                   ON CONFLICT(id) DO UPDATE SET
+                       token = excluded.token,
+                       calendar_enabled = excluded.calendar_enabled,
+                       calendar_state = excluded.calendar_state,
+                       last_attempt = NULL, last_success = NULL""",
+                (int(calendar_enabled), state, token, current),
+            )
+
+    def calendar_attempt(self, token: str, *, now: float | None = None) -> None:
+        current = time.time() if now is None else now
+        with self._connect() as db, db:
+            db.execute(
+                """UPDATE worker_health SET calendar_state = 'syncing', last_attempt = ?
+                   WHERE id = 1 AND token = ? AND calendar_enabled = 1
+                   AND EXISTS (SELECT 1 FROM scheduler_owner
+                               WHERE id = 1 AND token = ? AND expires_at > ?)""",
+                (current, token, token, current),
+            )
+
+    def calendar_outcome(
+        self, token: str, *, successful: bool, now: float | None = None
+    ) -> None:
+        current = time.time() if now is None else now
+        with self._connect() as db, db:
+            db.execute(
+                """UPDATE worker_health
+                   SET calendar_state = ?,
+                       last_success = CASE WHEN ? THEN ? ELSE last_success END
+                   WHERE id = 1 AND token = ? AND calendar_enabled = 1
+                   AND EXISTS (SELECT 1 FROM scheduler_owner
+                               WHERE id = 1 AND token = ? AND expires_at > ?)""",
+                ("ok" if successful else "error", int(successful), current,
+                 token, token, current),
+            )
+
+    def worker_health(self, *, now: float | None = None) -> WorkerHealth:
+        """Only a live matching lease can be reported as an active worker."""
+        current = time.time() if now is None else now
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT owner.token AS owner_token, owner.expires_at,
+                          health.token AS health_token, health.calendar_enabled,
+                          health.calendar_state, health.last_attempt, health.last_success
+                   FROM scheduler_owner AS owner
+                   LEFT JOIN worker_health AS health ON health.id = 1
+                   WHERE owner.id = 1"""
+            ).fetchone()
+        if row is None or row["expires_at"] <= current:
+            return WorkerHealth(False, False, "stopped")
+        if row["owner_token"] != row["health_token"]:
+            return WorkerHealth(True, False, "unknown")
+        return WorkerHealth(
+            True, bool(row["calendar_enabled"]), row["calendar_state"],
+            row["last_attempt"], row["last_success"],
+        )
+
     def claim_due(self, *, now: float | None = None, limit: int = 10) -> list[tuple[Schedule, str]]:
         current = time.time() if now is None else now
         with self._connect() as db, db:
@@ -364,6 +454,11 @@ def run_worker(
     token = uuid4().hex
     if not store.acquire_owner(token):
         raise RuntimeError("Another FRIDAY scheduler worker is already active")
+    try:
+        store.start_worker_health(token, calendar_enabled=calendar_sync is not None)
+    except Exception:
+        store.release_owner(token)
+        raise
     lost = threading.Event()
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
     scheduler = BackgroundScheduler(timezone="UTC")
@@ -382,13 +477,16 @@ def run_worker(
     def calendar_tick() -> None:
         if calendar_sync is None:
             return
+        store.calendar_attempt(token)
         try:
             published, removed = calendar_sync()
         except Exception:
+            store.calendar_outcome(token, successful=False)
             logging.getLogger(__name__).warning(
                 "FRIDAY calendar sync failed; local reminders are unaffected. Retry later."
             )
         else:
+            store.calendar_outcome(token, successful=True)
             if published or removed:
                 print(
                     f"FRIDAY calendar sync: {published} published, {removed} removed.",
