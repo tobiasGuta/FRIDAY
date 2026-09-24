@@ -5,16 +5,20 @@ from types import SimpleNamespace as Obj
 
 import httpx
 import pytest
+from test_clock_live import install_mock_sdk
 
 from friday.config import Settings
 from friday.core.events import EventKind
 from friday.providers.gemini_live import GeminiLiveProvider
 from friday.tools.builtins import build_builtin_registry
 from friday.tools.weather import (
-    FORECAST_URL, GEOCODE_URL, WeatherArguments, WeatherService, _condition,
+    FORECAST_URL,
+    GEOCODE_URL,
+    WeatherArguments,
+    WeatherService,
+    _condition,
 )
 from friday.ui.cli import build_parser, main
-from test_clock_live import install_mock_sdk
 
 
 PLACE = {
