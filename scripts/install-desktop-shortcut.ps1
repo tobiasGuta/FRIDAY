@@ -28,7 +28,7 @@ if ($InputDevice -ge 0) {
 }
 $shortcut.WorkingDirectory = $projectRoot
 $shortcut.Description = 'FRIDAY voice assistant (starts disconnected)'
-$shortcut.IconLocation = $pythonw
+$shortcut.IconLocation = Join-Path $projectRoot 'assets\friday.ico'
 $shortcut.Save()
 
 Write-Host "Created FRIDAY desktop shortcut: $shortcutPath"
