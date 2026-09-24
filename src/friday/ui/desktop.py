@@ -655,7 +655,7 @@ class DesktopWindow(QMainWindow):
     def _academic_failed(self, message: str) -> None:
         self._display_academic_cached()
         self.academic_status.setText(
-            f"Brightspace sync failed: {message} Previous cache, if any, is unchanged."
+            f"Brightspace sync failed: {message} Previous cached data, if any, is unchanged."
         )
 
     def _academic_finished(self) -> None:
