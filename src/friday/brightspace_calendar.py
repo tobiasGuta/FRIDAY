@@ -151,6 +151,11 @@ def _upcoming(items: tuple[AcademicItem, ...], *, now: datetime, days: int,
     return tuple(item for _, item in eligible[:limit])
 
 
+def local_date(item: AcademicItem) -> str:
+    """The calendar date in the computer's local timezone."""
+    return _when_local(item).date().isoformat()
+
+
 def display_time(item: AcademicItem) -> str:
     value = _when_local(item)
     if item.all_day:
