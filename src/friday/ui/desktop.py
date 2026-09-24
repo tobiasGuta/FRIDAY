@@ -36,7 +36,12 @@ from PySide6.QtWidgets import (
 
 from friday import __version__
 from friday.audio.devices import AudioDeviceError, Microphone, Speaker
-from friday.brightspace_calendar import AcademicStore, BrightspaceError, display_time
+from friday.brightspace_calendar import (
+    AcademicStore,
+    BrightspaceError,
+    display_time,
+    source_labeled_due,
+)
 from friday.brightspace_feed import forget_feed, save_feed
 from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
@@ -598,7 +603,13 @@ class DesktopWindow(QMainWindow):
         self._academic_cache_ready = bool(last)
         self.academic_list.clear()
         for item in snapshot.items:
-            label = "Due" if item.explicit_due else "Scheduled"
+            label = (
+                "Due (task)"
+                if item.explicit_due else (
+                    "Brightspace-labeled due (event)"
+                    if source_labeled_due(item) else "Scheduled"
+                )
+            )
             recurrence = " · recurring series (not expanded)" if item.recurring else ""
             self.academic_list.addItem(
                 f"{label}: {item.title}\n{display_time(item)}{recurrence}"
