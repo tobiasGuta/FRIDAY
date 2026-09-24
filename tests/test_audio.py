@@ -206,3 +206,24 @@ def test_lossless_speaker_rejects_invalid_pcm_and_stopped_output():
             await speaker.enqueue_wait(b"\x00\x00", sample_rate=24000)
 
     asyncio.run(scenario())
+
+
+def test_microphone_reports_inactive_device_but_not_transient_overflow():
+    async def scenario():
+        sd = Backend()
+        mic = Microphone(loop=asyncio.get_running_loop(), backend=sd)
+        mic.start()
+        stream = sd.input_stream
+        stream.active = True
+        mic.check_health()
+        stream.kwargs["callback"](b"\\x00\\x00", 1, None, "input overflow")
+        await asyncio.sleep(0)
+        assert mic.status_events == 1
+        mic.check_health()  # Overflow is not by itself a disconnect.
+        stream.active = False
+        with pytest.raises(AudioDeviceError, match="disconnected"):
+            mic.check_health()
+        mic.stop()
+        mic.check_health()  # No probe is needed after clean shutdown.
+
+    asyncio.run(scenario())
