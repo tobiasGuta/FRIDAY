@@ -20,7 +20,6 @@ from friday.tools.weather import (
 )
 from friday.ui.cli import build_parser, main
 
-
 PLACE = {
     "name": "Brooklyn", "admin1": "New York", "country": "United States",
     "latitude": 40.65, "longitude": -73.95, "timezone": "America/New_York",
