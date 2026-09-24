@@ -27,10 +27,13 @@ class VoiceTurns:
         self.speaker = speaker
         self._sender: asyncio.Task[None] | None = None
         self.recording = False
+        self.awaiting_response = False
 
     async def start(self) -> None:
         if self.recording:
             raise RuntimeError("Already recording")
+        if self.awaiting_response:
+            raise RuntimeError("Previous voice turn is still responding")
         # Explicit barge-in: clear buffered speech before starting the next turn.
         self.speaker.flush()
         self.microphone.start()
@@ -50,10 +53,17 @@ class VoiceTurns:
         if sender is not None:
             # A failed sender must not silently signal a successfully delivered turn.
             await sender
+        # Do not admit another recording until Gemini finishes and playback drains.
+        self.awaiting_response = True
         await self.manager.end_input()
+
+    def response_finished(self) -> None:
+        """Called after provider completion/interruption and local playback drain."""
+        self.awaiting_response = False
 
     async def close(self) -> None:
         self.recording = False
+        self.awaiting_response = False
         if self._sender is not None:
             self._sender.cancel()
             try:
