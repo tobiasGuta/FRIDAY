@@ -319,6 +319,10 @@ class DesktopVoiceSession:
                         self.emit("notice", "Speaker could not close normally.")
                 finally:
                     # Never carry a pending model-proposed action into a fresh session.
+                    # Discard the host-owned draft itself, not just the visible panel.
+                    if self.approval is not None:
+                        self.approval.abort_turn()
+                        self.approval.reject()
                     self.emit("draft", None)
                     if self._end_reason is not None and not self._quit_requested:
                         self.emit("recovery", self._end_reason)
