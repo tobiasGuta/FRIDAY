@@ -8,7 +8,9 @@
   output or logging, and no automatic network access at startup.
 - Validate the exact CUNY feed host, disable redirects, enforce decompressed
   response size limits, and parse VEVENT / VTODO with source date semantics.
-  Only VTODO DUE is labeled an explicit deadline; recurring series are flagged
+  Only VTODO DUE is labeled an explicit deadline. VEVENT titles ending
+  in ' - Due' carry a separate Brightspace source-label signal, not an
+  independently verified submission deadline. Recurring series are flagged
   but not expanded and the calendar does not prove all coursework is covered.
 - Store validated snapshots transactionally in separate SQLite storage; failure
   preserves the previously validated snapshot and changing/removing feed
