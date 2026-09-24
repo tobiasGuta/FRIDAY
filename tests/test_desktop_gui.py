@@ -434,3 +434,47 @@ def test_brightspace_worker_lifecycle_keeps_voice_and_scheduler_independent(monk
         assert window._worker is None and window._scheduler is None
     finally:
         window.close()
+
+
+def test_brightspace_due_named_event_is_not_presented_as_explicit_task(
+    monkeypatch, tmp_path
+):
+    from friday.brightspace_calendar import AcademicStore, parse_calendar
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    payload = b"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:worksheet
+DTSTART:20991005T235900Z
+SUMMARY:Worksheet I - Due
+END:VEVENT
+BEGIN:VTODO
+UID:task
+DUE;VALUE=DATE:20991006
+SUMMARY:Actual VTODO task
+END:VTODO
+END:VCALENDAR
+"""
+    store = AcademicStore()
+    store.replace(parse_calendar(payload))
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        # Use a known, synthetic local-cache snapshot regardless of wall clock.
+        monkeypatch.setattr(
+            AcademicStore,
+            "upcoming",
+            lambda self, **_kwargs: self.snapshot(),
+        )
+        window._display_academic_cached()
+        labels = [
+            window.academic_list.item(i).text()
+            for i in range(window.academic_list.count())
+        ]
+        assert any("Brightspace-labeled due (event): Worksheet I - Due" in x for x in labels)
+        assert any("Due (task): Actual VTODO task" in x for x in labels)
+    finally:
+        window.close()
