@@ -5,6 +5,8 @@ import sys
 from types import ModuleType
 from types import SimpleNamespace as Obj
 
+import pytest
+
 from friday.config import Settings
 from friday.core.events import EventKind
 from friday.providers.gemini_live import GeminiLiveProvider
@@ -181,6 +183,67 @@ def test_no_clock_enabled_rejects_even_named_clock_without_reading_it(monkeypatc
             assert session.tool_responses[0].response["result"] == {
                 "status": "error", "error": "unknown_tool"
             }
+        finally:
+            await adapter.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("completion_in_tool_message", [False, True])
+def test_clock_tool_intermediate_completion_does_not_finish_spoken_turn(
+    monkeypatch, completion_in_tool_message
+):
+    """A tool-step completion must not release push-to-talk before spoken answer."""
+    call = Obj(id="clock-1", name="get_local_time", args={})
+    session, _ = install_mock_sdk(monkeypatch, [call])
+
+    def content(*, transcript=None, audio=None, complete=False):
+        return Obj(
+            input_transcription=None,
+            output_transcription=Obj(text=transcript) if transcript else None,
+            model_turn=(
+                Obj(parts=[Obj(inline_data=Obj(data=audio))]) if audio is not None else None
+            ),
+            interrupted=False,
+            turn_complete=complete,
+        )
+
+    async def receive():
+        # Some server sequences carry the tool completion in the same message;
+        # others emit it just after the function response is submitted.
+        yield Obj(
+            tool_call=Obj(function_calls=[call]),
+            server_content=content(complete=completion_in_tool_message),
+        )
+        assert len(session.tool_responses) == 1
+        if not completion_in_tool_message:
+            yield Obj(tool_call=None, server_content=content(complete=True))
+        yield Obj(tool_call=None, server_content=content(transcript="It is 10:10 PM."))
+        yield Obj(tool_call=None, server_content=content(audio=b"\x01\x00"))
+        yield Obj(tool_call=None, server_content=content(complete=True))
+
+    session.receive = receive
+
+    async def scenario():
+        adapter = GeminiLiveProvider(
+            Settings(_env_file=None, GEMINI_API_KEY="mock-key"), enable_local_clock=True
+        )
+        await adapter.connect()
+        try:
+            observed = []
+            async with asyncio.timeout(1):
+                async for event in adapter.events():
+                    observed.append(event)
+                    if event.kind is EventKind.TURN_COMPLETE:
+                        break
+            assert [event.kind for event in observed] == [
+                EventKind.NOTICE,
+                EventKind.TRANSCRIPT,
+                EventKind.AUDIO,
+                EventKind.TURN_COMPLETE,
+            ]
+            assert observed[1].text == "It is 10:10 PM."
+            assert observed[2].audio == b"\x01\x00"
         finally:
             await adapter.close()
 

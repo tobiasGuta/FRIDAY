@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.2.3 adds a read-only local clock to the working voice harness.**
+A harness-first personal AI assistant. **v0.2.4 keeps tool-assisted spoken turns open until FRIDAY finishes answering.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.2.3)
+## What works today (v0.2.4)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -107,7 +107,7 @@ For the event contract and security boundaries, see `docs/ARCHITECTURE.md`; for 
 
 ## Safety defaults
 
-- No tools are registered; unexpected model tool-call messages are ignored.
+- Only the read-only local clock tool is registered; unexpected model tool calls are rejected.
 - No arbitrary shell, file, email, or network actions are exposed to the LLM.
 - The single allowlisted model tool reads only OS local date/time and timezone.
 - No raw audio is logged; audio event `repr` reports only byte length.

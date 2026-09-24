@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4 — Tool-assisted spoken turn reliability
+
+- Treat a Gemini Live tool-step completion as intermediate until assistant speech
+  begins and the final completion arrives; keep push-to-talk closed meanwhile.
+- Test both same-message and separate-message intermediate completion sequences.
+- Fix Ruff import ordering in the mocked Gemini adapter tests.
+
+
 ## 0.2.3 — Read-only local clock
 
 - Add a parameterless `get_local_time` function that reads the computer's current local time and timezone.

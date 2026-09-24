@@ -159,6 +159,9 @@ class GeminiLiveProvider:
 
     async def events(self) -> abc.AsyncIterator[VoiceEvent]:
         session = self._require_session()
+        # A function call can emit an intermediate turn_complete before Gemini
+        # resumes and speaks the answer. That is NOT the end of the user's turn.
+        awaiting_tool_followup = False
         # The SDK receive() iterator can end after a completed model turn;
         # a persistent conversation must call receive() again for later turns.
         while not self._closed:
@@ -192,10 +195,30 @@ class GeminiLiveProvider:
                             ),
                         )
                     if responses:
+                        # Set this before yielding any events from the same SDK
+                        # message: a tool call may carry an intermediate completion.
+                        awaiting_tool_followup = True
                         await session.send_tool_response(function_responses=responses)
                 for event in normalize_gemini_message(
                     message, output_sample_rate=self.settings.output_sample_rate
                 ):
+                    if event.kind is EventKind.TURN_COMPLETE and awaiting_tool_followup:
+                        # Do not tell the UI to reopen the microphone while a
+                        # tool-assisted spoken answer has not arrived yet.
+                        continue
+                    if (
+                        tool_call is None
+                        and (
+                            event.kind is EventKind.AUDIO
+                            or (
+                                event.kind is EventKind.TRANSCRIPT
+                                and event.speaker == "assistant"
+                            )
+                        )
+                    ):
+                        awaiting_tool_followup = False
+                    if event.kind is EventKind.INTERRUPTED:
+                        awaiting_tool_followup = False
                     yield event
             if not had_message:
                 # Avoid a busy loop if an SDK release returns an empty turn.
