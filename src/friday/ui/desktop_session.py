@@ -44,8 +44,8 @@ class DesktopVoiceSession:
         emit: UiEvent,
         max_seconds: int,
     ) -> None:
-        if max_seconds < 5:
-            raise ValueError("Session duration must be at least 5 seconds")
+        if not 5 <= max_seconds <= 3600:
+            raise ValueError("Session duration must be 5 to 3600 seconds")
         self.manager = manager
         self.speaker = speaker
         self.turns = VoiceTurns(manager, microphone, speaker)
