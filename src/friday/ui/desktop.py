@@ -253,11 +253,19 @@ class DesktopThread(QThread):
     def run(self) -> None:
         try:
             asyncio.run(self._run_session())
-        except (ValueError, AudioDeviceError, SessionError) as exc:
-            self.message.emit("error", str(exc))
+        except AudioDeviceError:
+            self.message.emit("error", "Audio device unavailable. Check connections and permissions.")
+            if not self._quit_requested.is_set():
+                self.message.emit("recovery", "audio")
+        except (ValueError, SessionError):
+            self.message.emit("error", "Voice connection could not start. Check configuration.")
+            if not self._quit_requested.is_set():
+                self.message.emit("recovery", "connection")
         except Exception as exc:
-            # Keep provider error messages and user data out of UI diagnostics.
+            # Keep provider errors, payloads and API secrets out of diagnostics.
             self.message.emit("error", f"Desktop session stopped ({type(exc).__name__}).")
+            if not self._quit_requested.is_set():
+                self.message.emit("recovery", "connection")
         finally:
             self.message.emit("status", "Disconnected")
 
@@ -286,6 +294,7 @@ class DesktopWindow(QMainWindow):
         self._quitting = False
         self._tray: QSystemTrayIcon | None = None
         self._state = "Disconnected"
+        self._last_recovery: str | None = None
         self._draft: dict[str, str] | None = None
         self.setWindowTitle(f"FRIDAY · v{__version__}")
         self.resize(990, 740)
@@ -628,19 +637,35 @@ class DesktopWindow(QMainWindow):
             "Responding": ("FRIDAY is responding", "Wait until her reply has finished."),
             "Disconnecting": ("Disconnecting", "Closing microphone and connection."),
             "Connection failed": ("Connection failed", "See the conversation panel."),
+            "Connection lost": (
+                "Voice connection ended", "Check your network; reconnect when ready."
+            ),
+            "Audio unavailable": (
+                "Audio device unavailable", "Check microphone and speaker, then reconnect."
+            ),
+            "Session expired": (
+                "Session time limit reached", "Reconnect to start a fresh voice session."
+            ),
         }
         title, hint = captions.get(state, (state, ""))
         self.voice_title.setText(title)
         self.voice_hint.setText(hint)
         ready = state == "Ready"
+        recoverable = {"Connection lost", "Audio unavailable", "Session expired"}
         self.mic_button.setEnabled(ready or state == "Listening")
         self.mic_button.setText("Stop recording" if state == "Listening" else "Start talking")
         self.connect_button.setText(
-            "Connect" if state in {"Disconnected", "Connection failed"} else "Disconnect"
+            "Reconnect" if state in recoverable else (
+                "Connect" if state in {"Disconnected", "Connection failed"} else "Disconnect"
+            )
         )
         self.connect_button.setEnabled(state not in {"Disconnecting"})
-        self.reminder_option.setEnabled(state in {"Disconnected", "Connection failed"})
-        self.web_option.setEnabled(state in {"Disconnected", "Connection failed"})
+        self.reminder_option.setEnabled(
+            state in {"Disconnected", "Connection failed"} or state in recoverable
+        )
+        self.web_option.setEnabled(
+            state in {"Disconnected", "Connection failed"} or state in recoverable
+        )
         self.approve_button.setEnabled(ready and self._draft is not None)
         self.reject_button.setEnabled(ready and self._draft is not None)
 
@@ -649,8 +674,13 @@ class DesktopWindow(QMainWindow):
             self._worker.request("quit")
             self._set_state("Disconnecting")
             return
-        if self._closing:
+        if self._closing or self._quitting:
             return
+        if self._last_recovery is not None:
+            self._append(
+                "System", "Starting a new voice session. Previous Live context is not restored."
+            )
+        self._last_recovery = None
         worker = DesktopThread(
             input_device=self._input_device, output_device=self._output_device,
             input_language=self._input_language,
@@ -703,6 +733,9 @@ class DesktopWindow(QMainWindow):
     def _on_event(self, kind: str, value: Any) -> None:
         if kind == "status":
             self._set_state(str(value))
+        elif kind == "recovery":
+            if value in {"connection", "audio", "expired"}:
+                self._last_recovery = value
         elif kind == "transcript":
             speaker = value.get("speaker")
             self._append("You" if speaker == "user" else "FRIDAY", value.get("text", ""))
@@ -742,7 +775,15 @@ class DesktopWindow(QMainWindow):
             self._worker.deleteLater()
             self._worker = None
         self._show_draft(None)
-        self._set_state("Disconnected")
+        states = {
+            "connection": "Connection lost",
+            "audio": "Audio unavailable",
+            "expired": "Session expired",
+        }
+        self._set_state(
+            "Disconnected" if self._closing or self._quitting
+            else states.get(self._last_recovery, "Disconnected")
+        )
         if self._quitting:
             self._finish_quit()
         elif self._closing and self._scheduler is None:
