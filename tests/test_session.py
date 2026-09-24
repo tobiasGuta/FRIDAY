@@ -123,3 +123,35 @@ def test_provider_stream_error_fails_session():
         assert manager.state is SessionState.FAILED
         await manager.close()
     asyncio.run(scenario())
+
+
+def test_burst_provider_audio_uses_backpressure_not_queue_eviction():
+    """A slow UI may delay output; it must not lose ordered provider PCM."""
+
+    class BurstProvider(FakeVoiceProvider):
+        async def events(self):
+            for i in range(24):
+                yield VoiceEvent(EventKind.AUDIO, audio=bytes((i, 0)), sample_rate=24000)
+            yield VoiceEvent(EventKind.TURN_COMPLETE)
+            await asyncio.Event().wait()
+
+    async def scenario():
+        manager = SessionManager(BurstProvider(), queue_size=4)
+        await manager.start()
+        await asyncio.sleep(0.02)  # Fill its tiny queue before consuming.
+        assert manager.dropped_audio_events == 0
+        received = []
+        async with asyncio.timeout(2):
+            async for event in manager.events():
+                received.append(event)
+                await asyncio.sleep(0.002)
+                if event.kind is EventKind.TURN_COMPLETE:
+                    break
+        assert [e.audio for e in received if e.kind is EventKind.AUDIO] == [
+            bytes((i, 0)) for i in range(24)
+        ]
+        assert manager.dropped_audio_events == 0
+        assert manager.dropped_control_events == 0
+        await manager.close()
+
+    asyncio.run(scenario())

@@ -20,6 +20,13 @@ class RecordingSpeaker:
     def enqueue(self, pcm, *, sample_rate):
         self.audio.append((pcm, sample_rate))
 
+    async def enqueue_wait(self, pcm, *, sample_rate):
+        self.enqueue(pcm, sample_rate=sample_rate)
+
+    @property
+    def played_bytes(self):
+        return sum(len(data) for data, _ in self.audio)
+
     def flush(self):
         self.flushes += 1
 
@@ -163,5 +170,32 @@ def test_early_completion_survives_until_waiter_and_counts_events():
             receiver.cancel()
             await asyncio.gather(receiver, return_exceptions=True)
             await manager.close()
+
+    asyncio.run(scenario())
+
+
+def test_long_response_renews_idle_deadline_only_on_audio_progress():
+    async def scenario():
+        commands = TerminalCommands()
+        finished = asyncio.Event()
+        diagnostics = VoiceTurnDiagnostics()
+        speaker = RecordingSpeaker()
+        receiver = asyncio.create_task(asyncio.sleep(5, result=False))
+
+        async def play_long_answer():
+            for _ in range(5):
+                await asyncio.sleep(0.02)
+                diagnostics.assistant_audio_bytes += 2
+            finished.set()
+
+        playback = asyncio.create_task(play_long_answer())
+        try:
+            assert await _await_voice_response(
+                commands, receiver, finished, speaker, timeout=0.05,
+                diagnostics=diagnostics,
+            ) == "ready"
+        finally:
+            receiver.cancel()
+            await asyncio.gather(receiver, playback, return_exceptions=True)
 
     asyncio.run(scenario())

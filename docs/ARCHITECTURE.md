@@ -63,3 +63,16 @@ flag can authorize an action. Only read-only tools are advertised in Gemini Live
 The provider dispatches tool responses through the registry; it never dynamically
 resolves model-provided names to Python attributes. `get_local_time` remains the
 only built-in model-callable tool. `friday tools` provides offline introspection.
+
+## v0.3.1 paced speaker output
+
+The Live event consumer calls `Speaker.enqueue_wait`: it chunks incoming 24 kHz
+int16 PCM into the bounded output buffer, awaiting room while the PortAudio
+callback drains it in real time. Normal speech is never truncated to the newest
+four seconds. The SDK event pump awaits capacity in its bounded event queue,
+propagating backpressure rather than silently evicting audio. An intentional
+interruption and shutdown may still discard unplayed audio. The existing lossy
+`Speaker.enqueue` is retained for explicit latest-audio fallback/tests but is not
+used by `friday talk`. The response idle watchdog observes provider progress
+and actual played PCM bytes, so a longer answer does not time out simply because
+playback is paced; the overall session cap remains in force.

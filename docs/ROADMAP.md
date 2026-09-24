@@ -30,6 +30,17 @@
 - **Next, one slice at a time:** grounded live web search, weather, and local timers/reminders. Each capability gets validation, permissions and offline tests before live acceptance.
 - Google Calendar, GitHub, Spotify, computer controls, MCP expansion, and opt-in personal memory remain future milestones.
 
+## v0.3.1 Long-speech playback (implemented; Windows headset acceptance pending)
+
+- Preserve full PCM speech and stream it at the device rate under bounded backpressure.
+- Keep the provider event queue bounded without normal speech eviction.
+- Retain the 30-second inactivity watchdog, /quit, and the original terminal prompt.
+- Add offline burst and ordering tests before the real headset acceptance check.
+
+## Next Phase 1 slice
+
+- Live web search (proposed v0.3.2), then weather and timers/reminders one at a time.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

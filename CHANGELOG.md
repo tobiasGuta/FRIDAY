@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 — Long-speech playback reliability
+
+- Preserve all normal Live PCM speech in arrival order by waiting for speaker capacity instead of dropping oldest audio after four seconds of backlog.
+- Apply bounded backpressure to the provider event queue; do not evict speech while the speaker catches up.
+- Renew the 30-second no-progress timeout on actual provider/playback progress, while retaining the overall session limit and /quit.
+- Report speaker device status events to help diagnose hardware underflows.
+- Add offline burst tests for PCM order, queue delivery, and longer responses; preserve manual Enter-to-talk and the clock/tool registry.
+
+
 ## 0.3.0 — Phase 1 tool foundation
 
 - Introduce an SDK-independent, allowlisted tool registry with strict Pydantic argument models.

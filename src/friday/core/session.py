@@ -100,7 +100,11 @@ class SessionManager:
                 self._provider_events += 1
                 if event.kind is EventKind.AUDIO:
                     self._output_audio_bytes += len(event.audio or b"")
-                self._emit(event)
+                # A fast Live provider must not silently discard words when the
+                # sound device is playing earlier audio. This bounded queue
+                # propagates backpressure through the provider's receive loop.
+                # Lifecycle/error signals still use _emit to remain deliverable.
+                await self._queue.put(event)
             if self.state is SessionState.READY:
                 self._set_state(SessionState.FAILED)
                 self._emit(VoiceEvent(EventKind.ERROR, text="Provider event stream ended"))

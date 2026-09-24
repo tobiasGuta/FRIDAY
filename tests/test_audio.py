@@ -158,3 +158,51 @@ def test_failed_device_open_is_cleaned_up():
         assert sd.output_stream.closed
 
     asyncio.run(scenario())
+
+
+def test_long_speech_waits_for_playback_without_dropping_or_reordering_pcm():
+    """A 3-second provider burst must survive a 1-second speaker buffer intact."""
+
+    async def scenario():
+        sd = Backend()
+        speaker = Speaker(backend=sd, blocksize=12000, max_buffer_seconds=1)
+        speaker.start()
+        pcm = (b"\x01\x00" * 24000) + (b"\x02\x00" * 24000) + (b"\x03\x00" * 24000)
+        enqueue_task = asyncio.create_task(speaker.enqueue_wait(pcm, sample_rate=24000))
+        await asyncio.sleep(0)
+        assert speaker.pending_bytes == 48000
+        assert not enqueue_task.done()
+        assert speaker.dropped_bytes == 0
+        callback = sd.output_stream.kwargs["callback"]
+        output = []
+        for _ in range(6):
+            block = bytearray(24000)
+            callback(block, 12000, None, None)
+            output.append(bytes(block))
+            await asyncio.sleep(0.02)  # Let the async producer refill the bounded buffer.
+            assert 0 <= speaker.pending_bytes <= 48000
+        await asyncio.wait_for(enqueue_task, timeout=1)
+        assert b"".join(output) == pcm
+        assert speaker.played_bytes == len(pcm)
+        assert speaker.dropped_bytes == 0
+        assert await speaker.wait_until_drained(timeout=0.2)
+        speaker.close()
+
+    asyncio.run(scenario())
+
+
+def test_lossless_speaker_rejects_invalid_pcm_and_stopped_output():
+    async def scenario():
+        speaker = Speaker(backend=Backend())
+        with pytest.raises(AudioDeviceError, match="24 kHz"):
+            await speaker.enqueue_wait(b"\x00\x00", sample_rate=16000)
+        with pytest.raises(AudioDeviceError, match="24 kHz"):
+            await speaker.enqueue_wait(b"\x00", sample_rate=24000)
+        with pytest.raises(AudioDeviceError, match="stopped"):
+            await speaker.enqueue_wait(b"\x00\x00", sample_rate=24000)
+        speaker.start()
+        speaker.close()
+        with pytest.raises(AudioDeviceError, match="stopped"):
+            await speaker.enqueue_wait(b"\x00\x00", sample_rate=24000)
+
+    asyncio.run(scenario())

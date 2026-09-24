@@ -170,6 +170,7 @@ class Speaker:
         self._stream: Any = None
         self.dropped_bytes = 0
         self.status_events = 0
+        self._played_bytes = 0
 
     def _callback(self, outdata: Any, frames: int, timing: Any, status: Any) -> None:
         del frames, timing
@@ -179,6 +180,7 @@ class Speaker:
             length = min(len(outdata), len(self._pending))
             data = bytes(self._pending[:length])
             del self._pending[:length]
+            self._played_bytes += length
         outdata[:] = data + bytes(len(outdata) - length)
 
     def start(self) -> None:
@@ -202,6 +204,7 @@ class Speaker:
         self._stream = stream
 
     def enqueue(self, pcm: bytes, *, sample_rate: int) -> None:
+        """Lossy latest-audio fallback; live speech uses enqueue_wait instead."""
         if sample_rate != self._sample_rate or len(pcm) % 2:
             raise AudioDeviceError("Speaker requires 24 kHz mono int16 PCM")
         if not pcm:
@@ -216,6 +219,31 @@ class Speaker:
                 del combined[:excess]
             self._pending = combined
 
+    async def enqueue_wait(self, pcm: bytes, *, sample_rate: int) -> None:
+        """Buffer PCM in order, waiting for playback instead of dropping speech.
+
+        The pending buffer stays bounded even if a provider sends an arbitrarily
+        large chunk. Only the coroutine waits: PortAudio's callback never blocks
+        on asyncio or network I/O, and the event loop remains responsive to /quit.
+        """
+        if sample_rate != self._sample_rate or len(pcm) % 2:
+            raise AudioDeviceError("Speaker requires 24 kHz mono int16 PCM")
+        if not pcm:
+            return
+        offset = 0
+        view = memoryview(pcm)
+        while offset < len(view):
+            with self._lock:
+                if self._stream is None:
+                    raise AudioDeviceError("Speaker stopped during playback")
+                capacity = self._max_bytes - len(self._pending)
+                length = min(capacity, len(view) - offset) & ~1
+                if length:
+                    self._pending.extend(view[offset : offset + length])
+                    offset += length
+            if offset < len(view):
+                await asyncio.sleep(0.01)
+
     def flush(self) -> None:
         with self._lock:
             self._pending.clear()
@@ -224,6 +252,12 @@ class Speaker:
     def pending_bytes(self) -> int:
         with self._lock:
             return len(self._pending)
+
+    @property
+    def played_bytes(self) -> int:
+        """Number of actual PCM bytes delivered to output callbacks, not silence."""
+        with self._lock:
+            return self._played_bytes
 
     async def wait_until_drained(self, *, timeout: float = 5.0) -> bool:
         """Wait for buffered PCM to reach the device without blocking the event loop.

@@ -121,7 +121,7 @@ async def _voice_events(
     """Single consumer: play PCM and print transcripts; return False on provider failure."""
     async for event in manager.events():
         if event.kind is EventKind.AUDIO:
-            speaker.enqueue(event.audio or b"", sample_rate=event.sample_rate or 0)
+            await speaker.enqueue_wait(event.audio or b"", sample_rate=event.sample_rate or 0)
             if diagnostics is not None:
                 diagnostics.assistant_audio_bytes += len(event.audio or b"")
         elif event.kind is EventKind.TRANSCRIPT:
@@ -157,17 +157,35 @@ async def _await_voice_response(
     speaker: Speaker,
     *,
     timeout: float = 30.0,
+    diagnostics: VoiceTurnDiagnostics | None = None,
 ) -> str:
-    """Block new turns while permitting /quit and bounding an unresponsive provider."""
+    """Block new turns until completion; time out only after playback goes idle.
+
+    Progress from provider events or actual speaker playback renews the deadline.
+    Extra Enter presses do not count as progress; /quit remains available.
+    """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
+
+    def progress_snapshot() -> tuple[int, ...]:
+        if diagnostics is None:
+            return ()
+        return (
+            diagnostics.user_transcript_chunks,
+            diagnostics.assistant_audio_bytes,
+            diagnostics.completions,
+            diagnostics.interruptions,
+            speaker.played_bytes,
+        )
+
+    previous_progress = progress_snapshot()
     while True:
         command_task = asyncio.create_task(commands.next())
         finish_task = asyncio.create_task(turn_finished.wait())
         try:
             done, _ = await asyncio.wait(
                 {command_task, finish_task, receiver},
-                timeout=max(0.0, deadline - loop.time()),
+                timeout=min(0.2, max(0.0, deadline - loop.time())),
                 return_when=asyncio.FIRST_COMPLETED,
             )
             if receiver in done:
@@ -182,9 +200,14 @@ async def _await_voice_response(
                     print("WARNING: speaker buffer did not drain; discarded pending audio")
                 commands.discard_pending_empty()
                 return "ready"
-            if not done:
+            current_progress = progress_snapshot()
+            if current_progress != previous_progress:
+                previous_progress = current_progress
+                deadline = loop.time() + timeout
+            if not done and loop.time() >= deadline:
                 return "timeout"
-            print("FRIDAY is responding. Wait for her to finish or type /quit.")
+            if done:
+                print("FRIDAY is responding. Wait for her to finish or type /quit.")
         finally:
             for task in (command_task, finish_task):
                 if not task.done():
@@ -224,13 +247,13 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
             while True:
                 if turns.awaiting_response:
                     result = await _await_voice_response(
-                        commands, receiver, turn_finished, speaker
+                        commands, receiver, turn_finished, speaker, diagnostics=diagnostics
                     )
                     if result == "quit":
                         break
                     if result == "timeout":
                         print(
-                            "FRIDAY response timed out (30s): "
+                            "FRIDAY response timed out (30s without audio progress): "
                             f"sent_frames={turns.sent_frames}, sent_bytes={turns.sent_bytes}, "
                             f"user_transcript_chunks={diagnostics.user_transcript_chunks}, "
                             f"assistant_audio_bytes={diagnostics.assistant_audio_bytes}, "
@@ -289,6 +312,8 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
             print(f"Microphone overload: {mic.dropped_chunks} chunks dropped")
         if speaker.dropped_bytes:
             print(f"Speaker overload: {speaker.dropped_bytes} bytes dropped")
+        if speaker.status_events:
+            print(f"Speaker device status events: {speaker.status_events}")
 
 
 def build_parser() -> argparse.ArgumentParser:
