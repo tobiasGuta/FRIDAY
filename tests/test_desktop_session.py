@@ -3,6 +3,8 @@
 import asyncio
 from datetime import datetime, timedelta
 
+import pytest
+
 from friday.audio.devices import AudioDeviceError
 from friday.core.events import EventKind, VoiceEvent
 from friday.core.session import SessionManager
@@ -339,3 +341,13 @@ def test_failure_discards_pending_draft_without_writing_sqlite(tmp_path):
         assert ("recovery", "connection") in events
 
     asyncio.run(scenario())
+
+
+def test_desktop_session_rejects_unbounded_duration():
+    for invalid in (4, 3601):
+        with pytest.raises(ValueError, match="5 to 3600"):
+            DesktopVoiceSession(
+                SessionManager(FakeAudioProvider()),
+                FakeMicrophone(), FakeSpeaker(), approval=None,
+                emit=lambda *_: None, max_seconds=invalid,
+            )
