@@ -109,7 +109,10 @@ class Microphone:
         except Exception as exc:
             self._recording = False
             if "stream" in locals():
-                stream.close()
+                try:
+                    stream.close()
+                except Exception:
+                    pass  # Preserve the original device-open failure.
             raise AudioDeviceError(
                 "Unable to start the microphone; check device and permissions"
             ) from exc
