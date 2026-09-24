@@ -439,7 +439,7 @@ def _schedule_cli(args: argparse.Namespace) -> int:
         try:
             run_worker(store)
         except KeyboardInterrupt:
-            print("\\nFRIDAY scheduler stopped.")
+            print("FRIDAY scheduler stopped.")
         return 0
     else:
         return 2
