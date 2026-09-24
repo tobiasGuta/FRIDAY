@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -191,7 +191,7 @@ class AcademicStore:
                 db.execute(
                     "INSERT INTO academic_meta (id, last_success) VALUES (1, ?) "
                     "ON CONFLICT(id) DO UPDATE SET last_success=excluded.last_success",
-                    (datetime.now(timezone.utc).isoformat(),),
+                    (datetime.now(UTC).isoformat(),),
                 )
         except sqlite3.Error as exc:
             raise BrightspaceError("Unable to update the local academic calendar.") from exc
