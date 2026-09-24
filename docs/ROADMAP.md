@@ -8,13 +8,13 @@
 - Session state machine, error handling, idempotent shutdown.
 - Unit tests without external API usage.
 
-## Next: v0.2 Voice Vertical Slice
+## v0.2 Voice Vertical Slice (implemented; Windows hardware acceptance pending)
 
-- PyAudio/sounddevice device abstraction; 16 kHz mono PCM input and 24 kHz PCM output.
-- Push-to-talk; bounded microphone sender and dedicated playback queue.
-- Playback flush on interruption; close/restart device on failures.
-- Real microphone-to-Gemini-to-speaker conversation and transcript display.
-- Tests with fake audio source/sink before hardware test.
+- sounddevice/PortAudio device abstraction; 16 kHz mono PCM input and 24 kHz PCM output.
+- Enter-to-talk/Enter-to-stop toggle, bounded microphone sender and bounded playback buffer.
+- Playback flush on Gemini interruption or new turn; clean device shutdown on errors.
+- `talk` command streams a microphone-to-Gemini-to-speaker conversation with transcript display.
+- Offline tests with fake audio source/sink pass; user hardware and live integration remain to validate.
 
 ## Later
 

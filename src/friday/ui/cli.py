@@ -1,4 +1,4 @@
-"""Offline harness demo and opt-in Gemini Live text-to-audio diagnostic."""
+"""Harness demo, text-to-audio diagnostic, and interactive voice session."""
 
 import argparse
 import asyncio
@@ -7,11 +7,14 @@ import wave
 from pathlib import Path
 
 from friday import __version__
+from friday.audio.devices import AudioDeviceError, Microphone, Speaker, list_audio_devices
+from friday.audio.turns import VoiceTurns
 from friday.config import Settings
 from friday.core.events import EventKind, SessionState, VoiceEvent
 from friday.core.session import SessionError, SessionManager
 from friday.providers.fake import FakeVoiceProvider
 from friday.providers.gemini_live import GeminiLiveProvider
+from friday.ui.terminal import TerminalCommands
 
 
 def _display(event: VoiceEvent) -> None:
@@ -70,7 +73,7 @@ async def _live(args: argparse.Namespace, settings: Settings) -> int:
             output.setsampwidth(2)
             output.setframerate(settings.output_sample_rate)
         await manager.send_text(args.text)
-        print("Connected. Receiving Gemini audio/transcriptions (speaker playback not yet built).")
+        print("Connected. This text diagnostic saves audio; use talk for speaker playback.")
         async with asyncio.timeout(min(args.timeout, settings.max_session_seconds)):
             async for event in manager.events():
                 _display(event)
@@ -90,17 +93,103 @@ async def _live(args: argparse.Namespace, settings: Settings) -> int:
         await manager.close()
 
 
+async def _voice_events(manager: SessionManager, speaker: Speaker) -> bool:
+    """Single consumer: play PCM and print transcripts; return False on provider failure."""
+    async for event in manager.events():
+        if event.kind is EventKind.AUDIO:
+            speaker.enqueue(event.audio or b"", sample_rate=event.sample_rate or 0)
+        elif event.kind is EventKind.INTERRUPTED:
+            speaker.flush()
+            _display(event)
+        else:
+            _display(event)
+        if event.kind is EventKind.ERROR:
+            return False
+        if event.kind is EventKind.STATE and event.state is SessionState.CLOSED:
+            return True
+    return False
+
+
+async def _talk(args: argparse.Namespace, settings: Settings) -> int:
+    settings.require_gemini_key()
+    # Only the explicit talk command opens a microphone. The text demo is unaffected.
+    loop = asyncio.get_running_loop()
+    mic = Microphone(
+        loop=loop, sample_rate=settings.input_sample_rate, device=args.input_device
+    )
+    speaker = Speaker(sample_rate=settings.output_sample_rate, device=args.output_device)
+    manager = SessionManager(GeminiLiveProvider(settings), queue_size=settings.event_queue_size)
+    commands = TerminalCommands()
+    turns = VoiceTurns(manager, mic, speaker)
+    receiver: asyncio.Task[bool] | None = None
+    try:
+        # If hardware initialization fails, do not open the paid provider connection.
+        speaker.start()
+        await manager.start()
+        receiver = asyncio.create_task(
+            _voice_events(manager, speaker), name="friday-speaker-events"
+        )
+        commands.start()
+        print("FRIDAY is connected. Use headphones to avoid microphone/speaker feedback.")
+        print("Press ENTER to start speaking, then ENTER again to stop. Type /quit to exit.")
+        async with asyncio.timeout(args.max_seconds or settings.max_session_seconds):
+            while True:
+                command_task = asyncio.create_task(commands.next())
+                done, _ = await asyncio.wait(
+                    {command_task, receiver}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if receiver in done:
+                    command_task.cancel()
+                    await asyncio.gather(command_task, return_exceptions=True)
+                    return 0 if receiver.result() else 1
+                command = command_task.result().strip().lower()
+                if command in {"/quit", "/exit"}:
+                    break
+                if command:
+                    print("Unknown command; press Enter to toggle the microphone or type /quit.")
+                    continue
+                if turns.recording:
+                    await turns.stop()
+                    print("Microphone paused. FRIDAY is responding...")
+                else:
+                    await turns.start()
+                    print("Recording... press Enter to stop.")
+        return 0
+    except TimeoutError:
+        print("Session time limit reached. Microphone and connection closing.")
+        return 0
+    finally:
+        commands.close()
+        try:
+            await turns.close()
+        finally:
+            if receiver is not None:
+                receiver.cancel()
+                await asyncio.gather(receiver, return_exceptions=True)
+            await manager.close()
+            speaker.close()
+        if mic.dropped_chunks:
+            print(f"Microphone overload: {mic.dropped_chunks} chunks dropped")
+        if speaker.dropped_bytes:
+            print(f"Speaker overload: {speaker.dropped_bytes} bytes dropped")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="friday", description="FRIDAY harness v0.1")
+    parser = argparse.ArgumentParser(prog="friday", description="FRIDAY voice assistant v0.2")
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor", help="Show safe configuration diagnostics")
+    sub.add_parser("devices", help="List microphone and speaker devices")
     demo = sub.add_parser("demo", help="Run the no-network fake-provider conversation")
     demo.add_argument("--once", help="Run one fake turn non-interactively")
     live = sub.add_parser("live", help="Opt-in Gemini Live diagnostic (uses your API key)")
     live.add_argument("--text", default="Hello FRIDAY. Introduce yourself in one sentence.")
     live.add_argument("--output", help="Explicitly save generated speech as a 24 kHz WAV")
     live.add_argument("--timeout", type=int, default=45, help="Maximum wait in seconds")
+    talk = sub.add_parser("talk", help="Live microphone -> Gemini -> speaker conversation")
+    talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
+    talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
+    talk.add_argument("--max-seconds", type=int, help="Override session duration limit")
     return parser
 
 
@@ -118,16 +207,25 @@ def main(argv: list[str] | None = None) -> int:
             settings.gemini_api_key and settings.gemini_api_key.get_secret_value().strip()
         )
         print(f"Gemini key configured: {has_key}")
-        print("Audio devices: not integrated in harness foundation")
+        print("Audio devices: available through optional voice dependency (run friday devices)")
         return 0
     try:
+        if args.command == "devices":
+            print(list_audio_devices())
+            return 0
+        if args.command == "talk":
+            if args.max_seconds is not None and args.max_seconds < 5:
+                raise ValueError("--max-seconds must be at least 5")
+            return asyncio.run(_talk(args, settings))
         if args.command == "demo":
             return asyncio.run(_demo(args, settings))
         if args.command == "live":
             if args.timeout < 1:
                 raise ValueError("--timeout must be positive")
             return asyncio.run(_live(args, settings))
-    except (SessionError, ValueError, TimeoutError, RuntimeError, OSError, EOFError) as exc:
+    except (
+        SessionError, AudioDeviceError, ValueError, TimeoutError, RuntimeError, OSError, EOFError
+    ) as exc:
         print(f"FRIDAY: {exc}")
         return 1
     except KeyboardInterrupt:

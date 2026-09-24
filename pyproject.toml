@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "friday-assistant"
-version = "0.1.0"
+version = "0.2.0"
 description = "Harness-first personal voice assistant foundation"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gemini = ["google-genai>=1.30,<3"]
+voice = ["sounddevice>=0.5.2,<1"]
 dev = ["pytest>=8,<10", "ruff>=0.9,<1"]
 
 [project.scripts]

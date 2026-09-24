@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — Voice Vertical Slice (2026-09-23)
+
+- New opt-in `talk` command with bounded 16 kHz microphone capture and 24 kHz speaker playback.
+- Enter-to-talk/stop, multi-turn Gemini Live session and transcript output.
+- Interrupt/new-turn playback flush, 40 ms audio frames, device inventory and optional device selection.
+- Fake audio hardware and voice-turn regression tests, no API key required.
+- Voice integration is awaiting real Windows device / Gemini acceptance testing.
+
 ## 0.1.0 — Harness Foundation (2026-09-23)
 
 - New provider-neutral core event and session contracts.
