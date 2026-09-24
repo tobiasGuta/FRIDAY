@@ -92,5 +92,10 @@ class VoiceTurns:
                 await self._sender
             except asyncio.CancelledError:
                 pass
-            self._sender = None
+            except Exception:
+                # A failed sender is reported by stop() or the active-turn
+                # watchdog; shutdown must still close the microphone.
+                pass
+            finally:
+                self._sender = None
         self.microphone.stop()
