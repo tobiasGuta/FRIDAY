@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.8 follow-up — Exact city/region weather matching
+
+- Resolve an explicitly named city and state/country against geocoder
+  name and administrative fields instead of treating similarly named
+  parks and neighborhoods as equally valid locations.
+- Keep genuinely duplicate city names ambiguous; never silently select
+  a different region when the caller supplied one.
+- Add offline regression tests based on the Windows Brooklyn search result.
+
 ## 0.3.8 — Read-only weather (Open-Meteo)
 
 - Register `get_weather(location, day)` for normal voice turns, independent

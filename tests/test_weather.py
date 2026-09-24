@@ -89,6 +89,42 @@ def test_ambiguous_city_never_calls_forecast():
     assert len(calls) == 1
 
 
+def test_explicit_city_and_state_resolve_against_similarly_named_places():
+    park = dict(PLACE, name="Brooklyn Bridge Park", latitude=40.70)
+    heights = dict(PLACE, name="Brooklyn Heights", latitude=40.69)
+    service, calls = _service(places=[PLACE, park, heights])
+    result = service.lookup("Brooklyn, New York")
+    assert result["status"] == "ok"
+    assert result["location"] == "Brooklyn, New York, United States"
+    assert len(calls) == 2
+    assert calls[1].url.params["latitude"] == str(PLACE["latitude"])
+
+
+def test_unique_exact_city_not_confused_with_nearby_neighborhoods():
+    park = dict(PLACE, name="Brooklyn Bridge Park", latitude=40.70)
+    service, calls = _service(places=[PLACE, park])
+    assert service.lookup("Brooklyn")["status"] == "ok"
+    assert len(calls) == 2
+
+
+def test_unknown_region_does_not_silently_choose_a_wrong_city():
+    park = dict(PLACE, name="Brooklyn Heights")
+    service, calls = _service(places=[PLACE, park])
+    assert service.lookup("Brooklyn, Connecticut") == {
+        "status": "error", "error": "location_not_found",
+    }
+    assert len(calls) == 1
+
+
+def test_explicit_city_matches_region_fields_not_substrings():
+    other = dict(PLACE, admin1="New York City", latitude=40.70)
+    service, calls = _service(places=[PLACE, other])
+    assert service.lookup(" Brooklyn ,  New York ")["location"] == (
+        "Brooklyn, New York, United States"
+    )
+    assert len(calls) == 2
+
+
 def test_unknown_location_never_calls_forecast():
     service, calls = _service(places=[])
     assert service.lookup("Nowhere") == {"status": "error", "error": "location_not_found"}

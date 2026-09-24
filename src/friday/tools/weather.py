@@ -62,6 +62,45 @@ def _place_label(place: dict[str, Any]) -> str:
     return ", ".join(part.strip()[:80] for part in parts if isinstance(part, str) and part.strip())
 
 
+def _normalized_place_part(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.casefold().split())
+
+
+def _matching_places(
+    location: str, unique: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Match explicit city/region fields, not a geocoder's ranked nearby names."""
+    parts = [_normalized_place_part(part) for part in location.split(",")]
+    if any(not part for part in parts):
+        return {}
+    exact = [
+        place for place in unique.values()
+        if _normalized_place_part(place.get("name")) == parts[0]
+    ]
+    if len(parts) > 1:
+        # Only match geographic metadata explicitly supplied by the caller.
+        # "Brooklyn, New York" must not select "Brooklyn Heights" or a
+        # different Brooklyn; "New York" must match a full field, not a substring.
+        exact = [
+            place for place in exact
+            if all(
+                region in {
+                    _normalized_place_part(place.get(field))
+                    for field in ("admin1", "admin2", "country", "country_code")
+                }
+                for region in parts[1:]
+            )
+        ]
+        return {_place_label(place): place for place in exact}
+    if exact:
+        # A single exact city may beat similarly named parks/neighborhoods,
+        # but distinct cities with the same name remain ambiguous.
+        return {_place_label(place): place for place in exact}
+    return unique
+
+
 def _parse_forecast(
     payload: Any, *, place: dict[str, Any], day: Literal["today", "tomorrow"]
 ) -> dict[str, Any]:
@@ -180,6 +219,9 @@ class WeatherService:
                         label = _place_label(place)
                         if label and label not in unique:
                             unique[label] = place
+                    if not unique:
+                        return {"status": "error", "error": "location_not_found"}
+                    unique = _matching_places(args.location.strip(), unique)
                     if not unique:
                         return {"status": "error", "error": "location_not_found"}
                     if len(unique) != 1:
