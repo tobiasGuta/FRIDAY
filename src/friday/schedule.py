@@ -520,7 +520,7 @@ def run_worker(
             )
         else:
             store.calendar_outcome(token, successful=True)
-            if published or removed:
+            if foreground and (published or removed):
                 print(
                     f"FRIDAY calendar sync: {published} published, {removed} removed.",
                     flush=True,
