@@ -636,6 +636,18 @@ def build_parser() -> argparse.ArgumentParser:
     calendar_actions.add_parser("init", help="Create or verify dedicated FRIDAY calendar")
     calendar_actions.add_parser("sync", help="Publish pending reminders and cancellations once")
     calendar_actions.add_parser("status", help="Show local calendar sync state")
+    desktop = sub.add_parser("desktop", help="Open the opt-in FRIDAY desktop interface")
+    desktop.add_argument("--input-device", type=int, help="Optional PortAudio microphone index")
+    desktop.add_argument("--output-device", type=int, help="Optional PortAudio speaker index")
+    desktop.add_argument(
+        "--input-language", choices=("en-US", "auto"), default="en-US",
+        help="Input transcription hint (default: en-US)",
+    )
+    desktop.add_argument("--max-seconds", type=int, help="Override session duration limit")
+    desktop.add_argument("--web", action="store_true", help="Enable opt-in web search initially")
+    desktop.add_argument(
+        "--no-reminders", action="store_true", help="Disable reminder tools initially",
+    )
     talk = sub.add_parser("talk", help="Live microphone -> Gemini -> speaker conversation")
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
@@ -747,6 +759,21 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "web-check":
             return asyncio.run(_web_check(args, settings))
+        if args.command == "desktop":
+            if args.max_seconds is not None and args.max_seconds < 5:
+                raise ValueError("--max-seconds must be at least 5")
+            try:
+                from friday.ui.desktop import launch_desktop
+            except ModuleNotFoundError as exc:
+                if exc.name == "PySide6" or (exc.name or "").startswith("PySide6."):
+                    print("Install desktop support: python -m pip install -e '.[desktop]'")
+                    return 1
+                raise
+            return launch_desktop(
+                input_device=args.input_device, output_device=args.output_device,
+                input_language=args.input_language, reminders=not args.no_reminders,
+                web=args.web, max_seconds=args.max_seconds,
+            )
         if args.command == "talk":
             if args.max_seconds is not None and args.max_seconds < 5:
                 raise ValueError("--max-seconds must be at least 5")

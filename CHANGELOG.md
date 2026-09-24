@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 — Opt-in Windows desktop voice shell (Windows hardware acceptance pending)
+
+- Add `friday desktop` with optional PySide6 installed via the `desktop` extra.
+- Provide a click-to-talk status orb, read-only transcript, upcoming-reminder list,
+  and host-owned Confirm/Cancel buttons for pending reminder proposals.
+- Run Gemini, microphone, speaker and the existing approval flow on a background
+  Qt thread with one asyncio event consumer, buffered playback and graceful close.
+- Preserve manual turn boundaries, English input hint, default-deny model tools,
+  opt-in web search, and existing `talk` / scheduler commands unchanged.
+- Start disconnected; do not open the mic or spend Gemini quota until Connect.
+- Add offline session and headless Qt tests on Windows and Ubuntu.
+- First slice retains the separate scheduler worker for local alerts and phone sync;
+  system tray, wake word and persistent conversation memory are not implemented.
+
+
 ## 0.4.4 — English input transcription hint (Windows acceptance pending)
 
 - Set an explicit `en-US` language hint for `talk` input transcription to

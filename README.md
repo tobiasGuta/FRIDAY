@@ -44,6 +44,46 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
+## FRIDAY desktop interface (v0.5.0)
+
+The opt-in PySide6 desktop shell gives FRIDAY a normal Windows window with
+click-to-talk, an animated listening/responding orb, read-only conversation
+transcripts, a small upcoming-reminders list, and visible reminder **Confirm /
+Cancel** buttons. It uses the existing Gemini Live voice engine and the same
+host-side approval gate: merely displaying a draft **never** creates, edits or
+cancels a reminder. Voice confirmation in a later turn still works. Web search
+remains opt-in; an ordinary desktop session cannot run arbitrary computer tasks.
+
+From an activated PowerShell environment:
+
+```powershell
+cd D:\\Tools\\FRIDAY
+.\\.venv\\Scripts\\Activate.ps1
+python -m pip install -e '.[gemini,voice,web,schedule,calendar,desktop,dev]'
+python -m friday desktop --input-device 1
+```
+
+The window starts **disconnected**. Click **Connect** to open the paid Live
+session, then click **Start talking**, speak, and click **Stop recording**.
+Wait for the spoken answer and status to return to **Ready** before the next
+turn. The original terminal command remains supported:
+`python -m friday talk --input-device 1 --reminders --input-language en-US`.
+In the GUI, reminders are enabled by default and web search is unchecked;
+toggle either before connecting. To start with web search checked, use
+`python -m friday desktop --input-device 1 --web`. To disable model reminder
+tools use `--no-reminders`. Use `--input-language auto` for multilingual input.
+Close/Disconnect stops the microphone, playback, and Live session. Unapproved
+drafts disappear when the voice session ends. A successful write is confirmed
+by the app's **Confirmed** transcript line, not by model speech alone.
+
+**Phone synchronization:** for this initial GUI slice, keep your existing
+scheduler running separately with `python -m friday schedule worker --calendar-sync`.
+Do not start a second worker for the same database. Desktop mode does not open
+Google OAuth, sync calendar events itself, install a system tray icon, stay
+always-on, or persist conversation history. Those are separate follow-on slices.
+Qt is not imported by ordinary CLI commands; without the desktop extra the
+new command prints installation guidance.
+
 ## Optional Gemini Live diagnostic
 
 Install `python -m pip install -e '.[gemini,voice,web,dev]'`. Copy `.env.example` to `.env`, enter a **new or existing** Google AI Studio key as `GEMINI_API_KEY`, and keep `.env` untracked. Verify the model ID and quota in your AI Studio project; the default is `gemini-3.8-live` as documented in Google's September 2026 Live API guide.

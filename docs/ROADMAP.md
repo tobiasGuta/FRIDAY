@@ -65,6 +65,17 @@
   normal voice sessions without `--web`, no changes to Enter-to-talk.
 - No computer-location inference or weather requests without a location query.
 
+## v0.5.0 — Desktop voice vertical slice
+
+- Opt-in PySide6 desktop UI with click-to-talk, status orb, transcript, pending
+  reminder cards and host-owned approval buttons. Qt is an optional extra.
+- Run the existing Gemini/PortAudio voice session off the UI thread and preserve
+  manual turn sequencing and safe shutdown; CLI voice remains available.
+- The existing separate scheduler continues local notifications and optional
+  Google Calendar sync. Real Windows window/mic acceptance is pending.
+- Later UI slices: embedded worker controls, tray/background lifecycle, OS
+  notifications, device selection and optional wake word.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.
