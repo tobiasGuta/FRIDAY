@@ -220,6 +220,27 @@ class Speaker:
         with self._lock:
             self._pending.clear()
 
+    @property
+    def pending_bytes(self) -> int:
+        with self._lock:
+            return len(self._pending)
+
+    async def wait_until_drained(self, *, timeout: float = 5.0) -> bool:
+        """Wait for buffered PCM to reach the device without blocking the event loop.
+
+        One output callback period accounts for the final submitted block. This is
+        not acoustic echo cancellation or a hardware playback latency measurement.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while loop.time() < deadline:
+            if self.pending_bytes == 0:
+                await asyncio.sleep(self._blocksize / self._sample_rate)
+                if self.pending_bytes == 0:
+                    return True
+            await asyncio.sleep(0.02)
+        return False
+
     def close(self) -> None:
         self.flush()
         stream, self._stream = self._stream, None
