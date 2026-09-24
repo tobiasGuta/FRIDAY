@@ -102,10 +102,13 @@ if your official private feed uses a different domain, do **not** work around
 this by disabling URL checks. Report only the hostname (not the private URL)
 so we can evaluate a justified allowlist change.
 
-**Calendar coverage limitation:** VEVENT start times are labeled scheduled
-events, not confirmed submission due dates. Only VTODO DUE is labeled an
-explicit deadline. All-day dates remain dates, not UTC midnight. Recurrence
-rules are flagged, not expanded; the list may omit individual later instances.
+**Calendar coverage limitation:** VEVENT start times are scheduled
+events, not independently verified submission due dates. A VEVENT whose
+source title ends in ` - Due` is displayed as **Brightspace-labeled due
+(event)**, distinct from an explicit VTODO DUE deadline. This label reflects
+Brightspace's title, not an independent submission-time verification.
+All-day dates remain dates, not UTC midnight. Recurrence rules are flagged,
+not expanded; the list may omit individual later instances.
 Brightspace's feed can omit activities that lack published calendar dates.
 FRIDAY must never equate an empty agenda with "no assignments." On sync
 failure the previously validated cache remains, but its last-success timestamp
