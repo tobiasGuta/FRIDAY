@@ -27,7 +27,9 @@ def test_local_clock_result_has_one_offset_aware_instant():
 
 
 def test_result_tracks_daylight_saving_time_by_supplied_instant():
-    clock = lambda: datetime(2026, 12, 1, 8, 2, tzinfo=timezone(timedelta(hours=-5), "EST"))
+    def clock():
+        return datetime(2026, 12, 1, 8, 2, tzinfo=timezone(timedelta(hours=-5), "EST"))
+
     data = read_local_clock(now=clock)
     assert data["time_12h"] == "8:02:00 AM"
     assert data["utc_offset"] == "-05:00"
@@ -63,7 +65,9 @@ def test_strict_allowlist_blocks_unsupported_names_and_arguments():
 def test_clock_cli_is_offline_and_prints_local_timezone(monkeypatch, capsys, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setattr("friday.ui.cli.read_local_clock", lambda: read_local_clock(now=fixture_clock))
+    monkeypatch.setattr(
+        "friday.ui.cli.read_local_clock", lambda: read_local_clock(now=fixture_clock)
+    )
     assert main(["clock"]) == 0
     assert capsys.readouterr().out.strip() == (
         "Computer local time: 9:53:12 PM on Wednesday, 2026-09-23 (EDT, UTC-04:00)"
