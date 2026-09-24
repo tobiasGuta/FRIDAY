@@ -151,6 +151,15 @@ def _upcoming(items: tuple[AcademicItem, ...], *, now: datetime, days: int,
     return tuple(item for _, item in eligible[:limit])
 
 
+def source_labeled_due(item: AcademicItem) -> bool:
+    """Only a source title ending in ' - Due' labels a VEVENT as due-related.
+
+    This is a source-provided label, NOT an independently verified DUE field.
+    Preserve the raw title; never turn this hint into explicit_due.
+    """
+    return item.kind == "event" and item.title.casefold().endswith(" - due")
+
+
 def local_date(item: AcademicItem) -> str:
     """The calendar date in the computer's local timezone."""
     return _when_local(item).date().isoformat()
