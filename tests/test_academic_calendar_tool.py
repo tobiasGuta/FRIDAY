@@ -72,3 +72,28 @@ def test_gemini_academic_tool_is_explicitly_gated():
     assert ACADEMIC_TOOL_NAME in [
         declaration["name"] for declaration in enabled._tool_registry.declarations()
     ]
+
+
+def test_due_named_event_is_exposed_as_source_label_not_explicit_deadline(
+    tmp_path, monkeypatch
+):
+    payload = b"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:worksheet
+DTSTART:20261005T235900Z
+SUMMARY:Worksheet I - Due
+END:VEVENT
+END:VCALENDAR
+"""
+    store = AcademicStore(tmp_path / "academic.sqlite3")
+    store.replace(parse_calendar(payload))
+    monkeypatch.setattr(store, "upcoming", lambda **_kwargs: store.snapshot())
+    registry = ToolRegistry()
+    register_academic_calendar(registry, store)
+    result = registry.execute(ACADEMIC_TOOL_NAME, {})
+    assert result["status"] == "ok"
+    assert result["items"][0]["title"] == "Worksheet I - Due"
+    assert result["items"][0]["source_labeled_due"] is True
+    assert result["items"][0]["explicit_due"] is False
+    assert "http" not in str(result["items"][0])
