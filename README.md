@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.3.8 adds a read-only Open-Meteo weather tool while preserving Tavily web search and Gemini Live voice.**
+A harness-first personal AI assistant. **v0.5.1 adds a Windows desktop shortcut, system tray lifecycle, and read-only calendar worker health to the v0.5.0 PySide6 voice interface.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.3.8)
+## What works today (v0.5.1)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -22,7 +22,7 @@ FRIDAY owns the application lifecycle, event types, provider interface and confi
 - `friday talk` and `friday live`: Gemini may call the narrowly allowlisted `get_local_time` function instead of guessing the current date or time.
 - Session state changes, idempotent shutdown, bounded event queue, basic session metrics, and automated tests.
 
-**Not yet implemented:** recurring reminders, wake word, always-on listening, persistent memory, arbitrary computer actions, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The currently available model-callable functions are the read-only clock, location-explicit weather, and opt-in web search. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
+**Not yet implemented:** recurring reminders, wake word, always-on listening, persistent memory, arbitrary computer actions, local inference, session resumption, or hardware-independent echo cancellation. The currently available model-callable functions are the read-only clock, location-explicit weather, and opt-in web search. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
 
 ## Requirements
 
@@ -44,45 +44,80 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
-## FRIDAY desktop interface (v0.5.0)
+## FRIDAY desktop interface (v0.5.1)
 
-The opt-in PySide6 desktop shell gives FRIDAY a normal Windows window with
-click-to-talk, an animated listening/responding orb, read-only conversation
-transcripts, a small upcoming-reminders list, and visible reminder **Confirm /
-Cancel** buttons. It uses the existing Gemini Live voice engine and the same
-host-side approval gate: merely displaying a draft **never** creates, edits or
-cancels a reminder. Voice confirmation in a later turn still works. Web search
-remains opt-in; an ordinary desktop session cannot run arbitrary computer tasks.
+The optional PySide6 shell provides click-to-talk, an animated voice orb, plain-text
+transcripts, an upcoming-reminders list and app-owned **Confirm / Cancel** controls.
+The existing approval gate still requires a distinct human approval; merely seeing
+or hearing a reminder draft never saves it. Web search is optional.
 
-From an activated PowerShell environment:
+Install dependencies in the project virtual environment:
 
 ```powershell
-cd D:\\Tools\\FRIDAY
-.\\.venv\\Scripts\\Activate.ps1
+cd D:\Tools\FRIDAY
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e '.[gemini,voice,web,schedule,calendar,desktop,dev]'
 python -m friday desktop --input-device 1
 ```
 
-The window starts **disconnected**. Click **Connect** to open the paid Live
-session, then click **Start talking**, speak, and click **Stop recording**.
-Wait for the spoken answer and status to return to **Ready** before the next
-turn. The original terminal command remains supported:
-`python -m friday talk --input-device 1 --reminders --input-language en-US`.
-In the GUI, reminders are enabled by default and web search is unchecked;
-toggle either before connecting. To start with web search checked, use
-`python -m friday desktop --input-device 1 --web`. To disable model reminder
-tools use `--no-reminders`. Use `--input-language auto` for multilingual input.
-Close/Disconnect stops the microphone, playback, and Live session. Unapproved
-drafts disappear when the voice session ends. A successful write is confirmed
-by the app's **Confirmed** transcript line, not by model speech alone.
+The window starts **disconnected**: no microphone capture or paid Gemini session
+until you click **Connect**. Use **Start talking**, speak, then **Stop recording**;
+wait for **Ready** before the next turn. Reminder drafts are on by default and web
+search is off unless you opt in. You can use `--no-reminders`, `--web`, or
+`--input-language auto`; the original `talk` CLI remains available.
 
-**Phone synchronization:** for this initial GUI slice, keep your existing
-scheduler running separately with `python -m friday schedule worker --calendar-sync`.
-Do not start a second worker for the same database. Desktop mode does not open
-Google OAuth, sync calendar events itself, install a system tray icon, stay
-always-on, or persist conversation history. Those are separate follow-on slices.
-Qt is not imported by ordinary CLI commands; without the desktop extra the
-new command prints installation guidance.
+### Create a desktop shortcut (Windows)
+
+Run this once from PowerShell in the project directory, after installing the
+desktop dependencies:
+
+```powershell
+.\scripts\install-desktop-shortcut.ps1 -InputDevice 1
+```
+
+This creates **FRIDAY.lnk** on your Windows desktop, pointing at the current
+`.venv\Scripts\pythonw.exe` with `-m friday desktop --input-device 1`.
+Opening it does not spawn a visible PowerShell window. The shortcut is tied to
+this repository and virtual environment; reinstall it if you move the project.
+If it fails silently, run `python -m friday desktop --input-device 1` in
+PowerShell to see the diagnostic. Remove the shortcut to uninstall it.
+There is no auto-start on Windows login and no bundled executable installer.
+
+### Window and tray lifecycle
+
+When the OS has a system tray, closing FRIDAY's window **hides** it without
+disconnecting an active Gemini session. Use the FRIDAY tray menu to **Open FRIDAY**,
+**Hide FRIDAY**, or **Quit FRIDAY**. Explicit Quit requests a clean session shutdown
+before the app exits. If no system tray is available, closing the window retains
+the previous graceful disconnect/exit behavior. Disconnect still closes the
+voice session while leaving the application window available. There is no
+always-on microphone or wake word.
+
+### Calendar and iPhone visibility
+
+The desktop displays read-only worker health: **not running**, **local-only**
+(worker running without sync), **sync mode unknown** (older worker), **waiting**,
+**syncing**, **sync OK**, or **sync failed**. For success/failure it shows the
+most recent successful local sync time when available. The tray tooltip also
+shows the status. **Sync OK means the Google API sync call returned successfully;
+it does not prove iPhone refresh or push notification delivery.**
+
+Start the existing independent scheduler from a separate PowerShell window:
+
+```powershell
+python -m friday schedule worker --calendar-sync
+```
+
+The worker attempts sync at startup and every 60 seconds. FRIDAY displays its
+health while that process is running, but does **not** start it, perform Google
+OAuth, or create a second scheduler. SQLite remains authoritative for local
+reminders. Do not run two workers on the same database. Older workers cannot
+report calendar outcomes until restarted using v0.5.1. If this desktop window
+is closed to the tray, the separate scheduler still needs its own running
+process for local alerts and new phone synchronization.
+
+Unapproved drafts are discarded on voice-session shutdown. The app saves no raw
+audio or persistent conversation transcript.
 
 ## Optional Gemini Live diagnostic
 
