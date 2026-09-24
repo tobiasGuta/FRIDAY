@@ -76,6 +76,18 @@
 - Later UI slices: embedded worker controls, tray/background lifecycle, OS
   notifications, device selection and optional wake word.
 
+## v0.5.1 — Desktop lifecycle and calendar worker visibility
+
+- Windows shortcut explicitly installed using the project virtual environment
+  and console-free `pythonw.exe`; no system startup registration.
+- Tray Open/Hide/Quit handles window visibility separately from Live connection
+  lifecycle. Quit stops the active audio/voice session; no tray retains normal close.
+- Scheduler records lease-bound, non-sensitive calendar attempt/outcome metadata.
+  Desktop reads it without creating or changing the SQLite database, and does not
+  launch another scheduler process. Phone sync remains a separately opted-in worker.
+- Offline coverage added; Windows desktop shortcut, tray, and real iPhone
+  synchronization acceptance remain to be confirmed.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.
