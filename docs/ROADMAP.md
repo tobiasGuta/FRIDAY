@@ -16,6 +16,14 @@
 - `talk` command streams a microphone-to-Gemini-to-speaker conversation with transcript display.
 - Offline tests with fake audio source/sink pass; user hardware and live integration remain to validate.
 
+## v0.2.3 Read-only local clock (implemented; live voice acceptance pending)
+
+- Offline computer-local clock diagnostic.
+- Explicit Gemini Live function declaration and function response.
+- Allowlist restricted to the clock; no other computer actions.
+- Mock Live round-trip and deterministic timezone tests.
+- Real headset test still required for this milestone.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

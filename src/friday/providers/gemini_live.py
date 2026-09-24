@@ -7,11 +7,15 @@ from typing import Any
 from friday.config import Settings
 from friday.core.events import EventKind, VoiceEvent
 from friday.core.provider import ProviderCapabilityError
+from friday.tools.local_clock import CLOCK_FUNCTION_DECLARATION, execute_local_tool
 
 FRIDAY_INSTRUCTION = (
     "You are FRIDAY, Tobias's personal AI assistant. Speak naturally and concisely. "
-    "You can converse but cannot yet control the computer, retain long-term memories, "
-    "or execute tools. Never claim an action occurred unless the application confirms it."
+    "For the current date or time, call get_local_time and use the returned computer clock "
+    "value, rather than guessing. The tool reads the computer\'s configured local timezone, "
+    "not geographic location; do not infer the computer\'s city or answer other cities\' times "
+    "from that clock alone. You can converse but cannot control the computer or retain "
+    "long-term memories. Never claim an action occurred unless the application confirms it."
 )
 
 
@@ -42,9 +46,6 @@ def normalize_gemini_message(
             yield VoiceEvent(EventKind.INTERRUPTED)
         if getattr(content, "turn_complete", False):
             yield VoiceEvent(EventKind.TURN_COMPLETE)
-    if getattr(message, "tool_call", None):
-        # v0.1 registers no tools. Never execute an unexpected model request.
-        yield VoiceEvent(EventKind.NOTICE, text="Unexpected tool call ignored; tools disabled")
     if getattr(message, "go_away", None):
         yield VoiceEvent(EventKind.NOTICE, text="Gemini server is closing this connection")
 
@@ -52,9 +53,16 @@ def normalize_gemini_message(
 class GeminiLiveProvider:
     """Direct audio-to-audio provider; no microphone or speaker ownership."""
 
-    def __init__(self, settings: Settings, *, manual_activity: bool = False) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        manual_activity: bool = False,
+        enable_local_clock: bool = False,
+    ) -> None:
         self.settings = settings
         self._manual_activity = manual_activity
+        self._enable_local_clock = enable_local_clock
         self._activity_open = False
         self._client: Any = None
         self._context: Any = None
@@ -82,6 +90,11 @@ class GeminiLiveProvider:
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
+            **(
+                {"tools": [{"function_declarations": [CLOCK_FUNCTION_DECLARATION]}]}
+                if self._enable_local_clock
+                else {}
+            ),
             **(
                 {
                     "realtime_input_config": types.RealtimeInputConfig(
@@ -152,6 +165,34 @@ class GeminiLiveProvider:
             had_message = False
             async for message in session.receive():
                 had_message = True
+                tool_call = getattr(message, "tool_call", None)
+                if tool_call is not None:
+                    # Live API requires an explicit FunctionResponse. No arbitrary
+                    # Python function lookup, shell execution or dynamic imports.
+                    from google.genai import types
+
+                    responses = []
+                    for call in getattr(tool_call, "function_calls", None) or []:
+                        name = getattr(call, "name", None)
+                        result = execute_local_tool(
+                            name if self._enable_local_clock else None,
+                            getattr(call, "args", None),
+                        )
+                        responses.append(
+                            types.FunctionResponse(
+                                id=call.id, name=name, response={"result": result}
+                            )
+                        )
+                        yield VoiceEvent(
+                            EventKind.NOTICE,
+                            text=(
+                                "Read computer local clock"
+                                if result["status"] == "ok"
+                                else "Unsupported or invalid tool request rejected"
+                            ),
+                        )
+                    if responses:
+                        await session.send_tool_response(function_responses=responses)
                 for event in normalize_gemini_message(
                     message, output_sample_rate=self.settings.output_sample_rate
                 ):

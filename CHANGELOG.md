@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3 — Read-only local clock
+
+- Add a parameterless `get_local_time` function that reads the computer's current local time and timezone.
+- Register the function in Gemini Live voice and text diagnostic sessions.
+- Respond explicitly to each function request; reject unknown names and unexpected arguments.
+- Add a no-API `friday clock` diagnostic and deterministic timezone and mock Live API tests.
+- Keep Enter-to-talk and microphone/speaker behavior unchanged.
+
+
 ## 0.2.2 — Manual voice-turn boundaries
 
 - Disable automatic VAD only for `talk`, with explicit activity start/end signals.

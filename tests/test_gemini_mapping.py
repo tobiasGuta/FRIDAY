@@ -21,7 +21,7 @@ def test_combined_audio_transcripts_and_turn_completion():
     assert "\\x01" not in repr(events[2])
 
 
-def test_interrupt_goaway_and_tool_call_are_not_executed():
+def test_interrupt_goaway_are_normalized_without_executing_tools():
     message = Obj(
         server_content=Obj(
             input_transcription=None,
@@ -34,7 +34,6 @@ def test_interrupt_goaway_and_tool_call_are_not_executed():
         go_away=Obj(time_left="5s"),
     )
     events = list(normalize_gemini_message(message))
-    assert [e.kind for e in events] == [
-        EventKind.INTERRUPTED, EventKind.NOTICE, EventKind.NOTICE
-    ]
-    assert "ignored" in events[1].text
+    # Tool requests are handled at the provider/allowlist boundary, not in
+    # this pure media normalizer.
+    assert [e.kind for e in events] == [EventKind.INTERRUPTED, EventKind.NOTICE]

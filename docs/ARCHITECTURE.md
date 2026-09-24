@@ -37,3 +37,19 @@ The model has no authority over filesystem, shell, browser, email or OS actions 
 `talk` creates a single speaker event consumer, a microphone sender, and a terminal command reader. Each blank Enter toggles between capture and paused state. `Microphone.stop()` appends an EOF marker after queued frames; `VoiceTurns.stop()` waits for the sender to drain before calling provider-neutral `end_input()`, which Gemini maps to `audio_stream_end=True` with server VAD enabled. Gemini can resume receiving audio for a later turn.
 
 The microphone callback transfers raw bytes to the asyncio loop; the model/network are never called from an audio callback. The speaker's PortAudio callback reads a lock-protected, bounded PCM buffer, pads with silence when empty, and discards pending audio on interruption. The terminal reader is daemonized so a failed network session cannot permanently strand an input thread. No tool execution is enabled.
+
+
+## v0.2.3 local clock function
+
+The only registered Live function is `get_local_time`. The provider receives
+Gemini's function call, checks the exact name and empty argument set, reads the
+operating system's current date/time with its local UTC offset and timezone name,
+and returns the value through `send_tool_response()` with the original function
+ID. Unsupported requests receive an explicit error result. The capability has
+no geographic-location lookup and no general computer-action interface.
+
+The `clock` CLI command calls the same pure function without opening the
+microphone, speakers, Gemini connection, or consuming API quota. The local clock
+and timezone are shared with Gemini only when the model invokes the function.
+The existing Enter-to-talk state machine and explicit audio activity boundaries
+are unchanged.

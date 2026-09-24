@@ -1,21 +1,23 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.2.2 stabilizes manual push-to-talk; v0.2 adds an opt-in live microphone-to-Gemini-to-speaker voice path.**
+A harness-first personal AI assistant. **v0.2.3 adds a read-only local clock to the working voice harness.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.2)
+## What works today (v0.2.3)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
 - `friday live`: Gemini Live text-triggered diagnostic with optional WAV output.
 - `friday talk`: opt-in live 16 kHz microphone input and 24 kHz speaker output with Enter-to-talk/Enter-to-stop, transcripts, and interruption playback flush.
 - `friday devices`: list available PortAudio microphone and speaker device indices.
+- `friday clock`: read your computer's local date, time, and configured timezone entirely offline.
+- `friday talk` and `friday live`: Gemini may call the narrowly allowlisted `get_local_time` function instead of guessing the current date or time.
 - Session state changes, idempotent shutdown, bounded event queue, basic session metrics, and automated tests.
 
-**Not yet implemented:** wake word, always-on listening, persistent memory, tool execution, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
+**Not yet implemented:** wake word, always-on listening, persistent memory, arbitrary computer actions, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The only model-callable function is the read-only local clock. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
 
 ## Requirements
 
@@ -30,6 +32,7 @@ python -m venv .venv
 # source .venv/bin/activate
 python -m pip install -e '.[gemini,voice,dev]'
 python -m friday doctor
+python -m friday clock
 python -m friday demo --once "Hello FRIDAY"
 python -m pytest
 ```
@@ -56,12 +59,32 @@ git pull --ff-only
 py -m pip install -e '.[gemini,voice,dev]'
 py -m pytest -q
 py -m friday devices
+py -m friday clock
 py -m friday talk
 ```
 
 Press **Enter** to activate the microphone, speak, and press **Enter** again to stop recording and prompt Gemini to respond. Repeat for multiple turns. Type `/quit` and Enter to disconnect. The default session limit is 300 seconds, set by `FRIDAY_MAX_SESSION_SECONDS` in `.env` or `--max-seconds` on `talk`. The microphone starts **only** after the user presses Enter; the Gemini Live session connects when `talk` launches. To choose specific devices, use `--input-device INDEX --output-device INDEX` with indices from `devices`.
 
 **Turn sequencing (v0.2.2):** After stopping the microphone, wait for FRIDAY to finish her response. Another ordinary recording cannot begin until Gemini reports completion or interruption and the speaker buffer has drained. Extra Enter presses during playback are ignored; `/quit` remains available. A response that never completes times out after 30 seconds and displays per-turn audio and event counters without logging raw audio. Gemini server-side VAD is disabled for `talk`; FRIDAY sends explicit activity start/end around captured PCM. The separate text `live` diagnostic still uses the default Gemini activity mode. This is still toggle-to-talk, not hands-free barge-in. Use headphones to minimize speaker-to-microphone echo; acoustic echo cancellation is not implemented.
+
+
+### Local clock (v0.2.3)
+
+Ask FRIDAY, “What time is it?” or “What's today's date?” She can call
+`get_local_time` and speak a value from your **computer's configured local clock**.
+The response includes the operating-system timezone name and UTC offset; it does
+not disclose or infer a geographic location, and it is not a general world-time
+service. To check the setting without consuming Gemini quota, run:
+
+```powershell
+py -m friday clock
+```
+
+The tool is read-only and has **no arguments**. FRIDAY explicitly rejects unknown
+function names or unexpected arguments, and sends the rejection back to Gemini;
+she cannot run commands, change system settings, or access your files. The current
+clock value and timezone are sent to Gemini only when she calls the tool in a Live
+session. The terminal prompt and Enter-to-talk interaction are unchanged.
 
 If the sounddevice/PortAudio backend cannot open a device, FRIDAY reports a local audio error and cleans up rather than silently accessing the wrong device. If Gemini sends an interruption event, pending playback is cleared; pressing Enter for a new turn also clears it. This is a push-to-talk **toggle**, not a hold-to-talk keyboard shortcut.
 
@@ -86,6 +109,7 @@ For the event contract and security boundaries, see `docs/ARCHITECTURE.md`; for 
 
 - No tools are registered; unexpected model tool-call messages are ignored.
 - No arbitrary shell, file, email, or network actions are exposed to the LLM.
+- The single allowlisted model tool reads only OS local date/time and timezone.
 - No raw audio is logged; audio event `repr` reports only byte length.
 - SDK imports are confined to `src/friday/providers/gemini_live.py`.
 - `.env`, `.wav`, `.pcm`, and virtual environments are ignored by Git.

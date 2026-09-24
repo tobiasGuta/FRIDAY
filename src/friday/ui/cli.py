@@ -15,6 +15,7 @@ from friday.core.events import EventKind, SessionState, VoiceEvent
 from friday.core.session import SessionError, SessionManager
 from friday.providers.fake import FakeVoiceProvider
 from friday.providers.gemini_live import GeminiLiveProvider
+from friday.tools.local_clock import read_local_clock
 from friday.ui.terminal import TerminalCommands
 
 
@@ -62,7 +63,9 @@ async def _demo(args: argparse.Namespace, settings: Settings) -> int:
 async def _live(args: argparse.Namespace, settings: Settings) -> int:
     # Validate before opening any external connection or output file.
     settings.require_gemini_key()
-    manager = SessionManager(GeminiLiveProvider(settings), queue_size=settings.event_queue_size)
+    manager = SessionManager(
+        GeminiLiveProvider(settings, enable_local_clock=True), queue_size=settings.event_queue_size
+    )
     await manager.start()
     audio_bytes = 0
     output: wave.Wave_write | None = None
@@ -197,7 +200,8 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
     )
     speaker = Speaker(sample_rate=settings.output_sample_rate, device=args.output_device)
     manager = SessionManager(
-        GeminiLiveProvider(settings, manual_activity=True), queue_size=settings.event_queue_size
+        GeminiLiveProvider(settings, manual_activity=True, enable_local_clock=True),
+        queue_size=settings.event_queue_size
     )
     commands = TerminalCommands()
     turns = VoiceTurns(manager, mic, speaker)
@@ -292,6 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor", help="Show safe configuration diagnostics")
     sub.add_parser("devices", help="List microphone and speaker devices")
+    sub.add_parser("clock", help="Read the computer local clock offline (no API usage)")
     demo = sub.add_parser("demo", help="Run the no-network fake-provider conversation")
     demo.add_argument("--once", help="Run one fake turn non-interactively")
     live = sub.add_parser("live", help="Opt-in Gemini Live diagnostic (uses your API key)")
@@ -322,6 +327,14 @@ def main(argv: list[str] | None = None) -> int:
         print("Audio devices: available through optional voice dependency (run friday devices)")
         return 0
     try:
+        if args.command == "clock":
+            current = read_local_clock()
+            print(
+                f"Computer local time: {current['time_12h']} "
+                f"on {current['weekday']}, {current['date']} "
+                f"({current['timezone_name']}, UTC{current['utc_offset']})"
+            )
+            return 0
         if args.command == "devices":
             print(list_audio_devices())
             return 0

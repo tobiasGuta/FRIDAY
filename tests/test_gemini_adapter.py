@@ -3,9 +3,10 @@
 import asyncio
 import sys
 
-import pytest
 from types import ModuleType
 from types import SimpleNamespace as Obj
+
+import pytest
 
 from friday.config import Settings
 from friday.core.events import EventKind
