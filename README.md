@@ -74,6 +74,49 @@ Press **Enter** to activate the microphone, speak, and press **Enter** again to 
 **Turn sequencing and playback (v0.3.1):** After stopping the microphone, wait for FRIDAY to finish her response. Another ordinary recording cannot begin until Gemini reports completion or interruption and the speaker buffer has drained. Extra Enter presses during playback are ignored; `/quit` remains available. A response stalls after 30 seconds without provider or actual playback progress and displays per-turn audio and event counters without logging raw audio; the configured overall session limit still applies. Long replies use bounded, lossless playback backpressure instead of discarding speech when Gemini sends audio faster than the speakers can play it. Gemini server-side VAD is disabled for `talk`; FRIDAY sends explicit activity start/end around captured PCM. The separate text `live` diagnostic still uses the default Gemini activity mode. This is still toggle-to-talk, not hands-free barge-in. Use headphones to minimize speaker-to-microphone echo; acoustic echo cancellation is not implemented.
 
 
+### Local schedules — first foundation (v0.3.9)
+
+One-time timers and reminders now live in a separate SQLite database in your user
+data folder (Windows: `%LOCALAPPDATA%\\FRIDAY\\schedules.sqlite3`). They survive
+`/quit` and a FRIDAY restart. The **independent worker must be running** to emit
+an alert; the initial delivery is terminal text, not an iPhone/Windows notification.
+There is no new Gemini tool or calendar access in this release.
+
+Install the optional worker dependency from your activated virtual environment:
+
+```powershell
+python -m pip install -e '.[gemini,voice,web,schedule,dev]'
+```
+
+In one PowerShell terminal, start the worker and leave it running:
+
+```powershell
+python -m friday schedule worker
+```
+
+In a second PowerShell terminal, create, inspect, or cancel schedules:
+
+```powershell
+python -m friday schedule timer --seconds 30 --text "Test timer"
+python -m friday schedule add --at "2026-09-25T19:00:00-04:00" --text "Study"
+python -m friday schedule list
+python -m friday schedule list --all
+python -m friday schedule cancel REMINDER_ID
+```
+
+Replace the example date and offset with the **actual desired future time**.
+An explicit UTC offset is required; FRIDAY will not guess daylight-saving
+ambiguities. `schedule worker --once` processes jobs already due and exits.
+You can optionally set `--db PATH` immediately after `schedule` for isolated tests.
+
+The worker uses APScheduler 3.x for the background dispatch tick and SQLite
+as the source of truth. It enforces a single active worker lease, atomically
+claims due jobs, and retries stale claims after a crash. An alert can be
+repeated if the process crashes after displaying it but before acknowledgement;
+**exactly-once delivery is not guaranteed**. This is a local-only milestone:
+Google Calendar sync, voice-created reminders, recurring schedules and phone
+notifications are later steps requiring separate user authorization.
+
 ### Weather — today and tomorrow (v0.3.8)
 
 Weather uses Open-Meteo's geocoding and forecast APIs. No weather API key is

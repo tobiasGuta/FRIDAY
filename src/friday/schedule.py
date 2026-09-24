@@ -1,0 +1,318 @@
+"""Durable, local, one-time schedules. No Gemini, network, or audio dependency.
+
+SQLite is the source of truth; APScheduler only drives the independent worker.
+A notification is acknowledged after output, so a crash can cause a retry:
+delivery is at-least-once, not exactly-once.
+"""
+
+from __future__ import annotations
+
+import os
+import sqlite3
+import threading
+import time
+from collections.abc import Callable, Iterator
+from contextlib import closing, contextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import uuid4
+
+MAX_TEXT = 200
+MAX_TIMER_SECONDS = 7 * 24 * 60 * 60
+OWNER_LEASE_SECONDS = 30
+CLAIM_LEASE_SECONDS = 90
+MAX_ATTEMPTS = 3
+
+
+def default_database_path() -> Path:
+    """Keep user reminders outside the repository and its tracked files."""
+    if os.name == "nt":
+        root = os.environ.get("LOCALAPPDATA")
+        base = Path(root) if root else Path.home() / "AppData" / "Local"
+    else:
+        root = os.environ.get("XDG_DATA_HOME")
+        base = Path(root) if root else Path.home() / ".local" / "share"
+    return base / "FRIDAY" / "schedules.sqlite3"
+
+
+def parse_due(value: str, *, now: float | None = None) -> datetime:
+    """Require an explicit UTC offset to avoid ambiguous local/DST times."""
+    try:
+        due = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Use ISO 8601 with UTC offset, e.g. 2026-09-25T19:00:00-04:00") from exc
+    if due.tzinfo is None or due.utcoffset() is None:
+        raise ValueError("Reminder time must include a UTC offset, e.g. -04:00")
+    instant = due.astimezone(UTC)
+    current = time.time() if now is None else now
+    if not 1 <= instant.timestamp() - current <= 366 * 24 * 60 * 60:
+        raise ValueError("Reminder time must be 1 second to 366 days in the future")
+    return instant
+
+
+@dataclass(frozen=True, slots=True)
+class Schedule:
+    id: str
+    kind: str
+    text: str
+    due_at: float
+    status: str
+    attempts: int
+
+    @property
+    def due_utc(self) -> str:
+        return datetime.fromtimestamp(self.due_at, UTC).isoformat(timespec="seconds")
+
+
+class ScheduleStore:
+    """One SQLite file can be shared by CLI writers and one background worker."""
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = default_database_path() if path is None else Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as db, db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS schedules (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL CHECK(kind IN ('timer', 'reminder')),
+                    text TEXT NOT NULL,
+                    due_at REAL NOT NULL,
+                    created_at REAL NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending', 'delivering', 'delivered',
+                                         'cancelled', 'failed')),
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    available_at REAL NOT NULL DEFAULT 0,
+                    claim_token TEXT,
+                    claim_until REAL,
+                    delivered_at REAL
+                )
+            """)
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS schedules_due_idx
+                ON schedules(status, due_at, available_at)
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS scheduler_owner (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    token TEXT NOT NULL,
+                    expires_at REAL NOT NULL
+                )
+            """)
+            db.execute("""
+                INSERT OR IGNORE INTO scheduler_owner(id, token, expires_at)
+                VALUES (1, '', 0)
+            """)
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        with closing(sqlite3.connect(self.path, timeout=5)) as db:
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA busy_timeout=5000")
+            yield db
+
+    @staticmethod
+    def _record(row: sqlite3.Row) -> Schedule:
+        return Schedule(
+            id=row["id"], kind=row["kind"], text=row["text"],
+            due_at=row["due_at"], status=row["status"], attempts=row["attempts"],
+        )
+
+    def create(
+        self, kind: str, text: str, due_at: float, *, now: float | None = None
+    ) -> Schedule:
+        if kind not in {"timer", "reminder"}:
+            raise ValueError("Unknown schedule kind")
+        if not isinstance(text, str) or not 1 <= len(text.strip()) <= MAX_TEXT:
+            raise ValueError("Schedule text must contain 1–200 characters")
+        current = time.time() if now is None else now
+        if not 1 <= due_at - current <= 366 * 24 * 60 * 60:
+            raise ValueError("Schedule must be 1 second to 366 days in the future")
+        if kind == "timer" and due_at - current > MAX_TIMER_SECONDS:
+            raise ValueError("Timer duration cannot exceed 7 days")
+        item = Schedule(uuid4().hex, kind, text.strip(), due_at, "pending", 0)
+        with self._connect() as db, db:
+            db.execute(
+                """INSERT INTO schedules(id, kind, text, due_at, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (item.id, item.kind, item.text, item.due_at, current),
+            )
+        return item
+
+    def timer(self, seconds: int, text: str, *, now: float | None = None) -> Schedule:
+        if type(seconds) is not int or not 1 <= seconds <= MAX_TIMER_SECONDS:
+            raise ValueError("Timer must be 1 to 604800 seconds")
+        current = time.time() if now is None else now
+        return self.create("timer", text, current + seconds, now=current)
+
+    def reminder(self, when: str, text: str, *, now: float | None = None) -> Schedule:
+        current = time.time() if now is None else now
+        due = parse_due(when, now=current)
+        return self.create("reminder", text, due.timestamp(), now=current)
+
+    def list_items(self, *, include_history: bool = False) -> list[Schedule]:
+        where = "" if include_history else "WHERE status IN ('pending', 'delivering')"
+        with self._connect() as db:
+            rows = db.execute(
+                f"""SELECT id, kind, text, due_at, status, attempts FROM schedules
+                    {where} ORDER BY due_at, id LIMIT 100"""
+            ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def cancel(self, item_id: str) -> bool:
+        with self._connect() as db, db:
+            changed = db.execute(
+                """UPDATE schedules SET status = 'cancelled'
+                   WHERE id = ? AND status = 'pending'""",
+                (item_id,),
+            ).rowcount
+        return changed == 1
+
+    def acquire_owner(self, token: str, *, now: float | None = None) -> bool:
+        current = time.time() if now is None else now
+        with self._connect() as db, db:
+            changed = db.execute(
+                """UPDATE scheduler_owner SET token = ?, expires_at = ?
+                   WHERE id = 1 AND expires_at <= ?""",
+                (token, current + OWNER_LEASE_SECONDS, current),
+            ).rowcount
+        return changed == 1
+
+    def renew_owner(self, token: str, *, now: float | None = None) -> bool:
+        current = time.time() if now is None else now
+        with self._connect() as db, db:
+            changed = db.execute(
+                """UPDATE scheduler_owner SET expires_at = ?
+                   WHERE id = 1 AND token = ? AND expires_at > ?""",
+                (current + OWNER_LEASE_SECONDS, token, current),
+            ).rowcount
+        return changed == 1
+
+    def release_owner(self, token: str) -> None:
+        with self._connect() as db, db:
+            db.execute(
+                """UPDATE scheduler_owner SET token = '', expires_at = 0
+                   WHERE id = 1 AND token = ?""",
+                (token,),
+            )
+
+    def claim_due(self, *, now: float | None = None, limit: int = 10) -> list[tuple[Schedule, str]]:
+        current = time.time() if now is None else now
+        with self._connect() as db, db:
+            # Serialize worker claims with writes/cancellation on the same SQLite file.
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute(
+                """SELECT id, kind, text, due_at, status, attempts FROM schedules
+                   WHERE due_at <= ? AND (
+                     (status = 'pending' AND available_at <= ?)
+                     OR (status = 'delivering' AND claim_until <= ?)
+                   ) ORDER BY due_at, id LIMIT ?""",
+                (current, current, current, limit),
+            ).fetchall()
+            claimed = []
+            for row in rows:
+                token = uuid4().hex
+                db.execute(
+                    """UPDATE schedules SET status = 'delivering', attempts = attempts + 1,
+                       claim_token = ?, claim_until = ?
+                       WHERE id = ?""",
+                    (token, current + CLAIM_LEASE_SECONDS, row["id"]),
+                )
+                claimed.append((self._record(row), token))
+        return claimed
+
+    def delivered(self, item_id: str, token: str, *, now: float | None = None) -> bool:
+        current = time.time() if now is None else now
+        with self._connect() as db, db:
+            changed = db.execute(
+                """UPDATE schedules SET status = 'delivered', delivered_at = ?,
+                   claim_token = NULL, claim_until = NULL
+                   WHERE id = ? AND status = 'delivering' AND claim_token = ?""",
+                (current, item_id, token),
+            ).rowcount
+        return changed == 1
+
+    def failed_attempt(self, item_id: str, token: str, *, now: float | None = None) -> None:
+        current = time.time() if now is None else now
+        with self._connect() as db, db:
+            db.execute(
+                """UPDATE schedules
+                   SET status = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END,
+                       available_at = ?, claim_token = NULL, claim_until = NULL
+                   WHERE id = ? AND status = 'delivering' AND claim_token = ?""",
+                (MAX_ATTEMPTS, current + 15, item_id, token),
+            )
+
+
+def dispatch_due(
+    store: ScheduleStore, notify: Callable[[Schedule], None], *, now: float | None = None
+) -> int:
+    """Claim, emit, then acknowledge. Crashes after emit may replay an alert."""
+    completed = 0
+    for item, token in store.claim_due(now=now):
+        try:
+            notify(item)
+        except Exception:
+            store.failed_attempt(item.id, token, now=now)
+        else:
+            if store.delivered(item.id, token, now=now):
+                completed += 1
+    return completed
+
+
+def console_notify(item: Schedule) -> None:
+    print(f"FRIDAY ALERT [{item.kind}] {item.text} (id={item.id})", flush=True)
+
+
+def work_once(
+    store: ScheduleStore, notify: Callable[[Schedule], None] = console_notify,
+    *, now: float | None = None,
+) -> int:
+    """A no-network diagnostic; the one-worker lease still applies."""
+    token = uuid4().hex
+    if not store.acquire_owner(token, now=now):
+        raise RuntimeError("Another FRIDAY scheduler worker is already active")
+    try:
+        return dispatch_due(store, notify, now=now)
+    finally:
+        store.release_owner(token)
+
+
+def run_worker(store: ScheduleStore) -> None:
+    """APScheduler supplies the periodic tick; SQLite owns durable job state."""
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+    except ImportError as exc:
+        raise RuntimeError(
+            "Install scheduling support: python -m pip install -e '.[schedule]'"
+        ) from exc
+
+    token = uuid4().hex
+    if not store.acquire_owner(token):
+        raise RuntimeError("Another FRIDAY scheduler worker is already active")
+    lost = threading.Event()
+    scheduler = BackgroundScheduler(timezone="UTC")
+
+    def tick() -> None:
+        if not store.renew_owner(token):
+            lost.set()
+            return
+        dispatch_due(store, console_notify)
+
+    scheduler.add_job(
+        tick, "interval", seconds=1, id="friday-dispatch",
+        coalesce=True, max_instances=1, misfire_grace_time=30,
+    )
+    try:
+        print("FRIDAY scheduler running; leave this terminal open. Ctrl+C to stop.")
+        tick()
+        scheduler.start()
+        while not lost.wait(0.5):
+            pass
+        raise RuntimeError("FRIDAY scheduler lost its worker lease")
+    finally:
+        if scheduler.running:
+            scheduler.shutdown(wait=True)
+        store.release_owner(token)

@@ -6,6 +6,7 @@ import logging
 import tempfile
 import wave
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from friday import __version__
@@ -16,6 +17,7 @@ from friday.core.events import EventKind, SearchSource, SessionState, VoiceEvent
 from friday.core.session import SessionError, SessionManager
 from friday.providers.fake import FakeVoiceProvider
 from friday.providers.gemini_live import GeminiLiveProvider
+from friday.schedule import ScheduleStore, run_worker, work_once
 from friday.tools.builtins import build_builtin_registry
 from friday.tools.local_clock import read_local_clock
 from friday.tools.search_grounding import SearchPreview
@@ -406,6 +408,49 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
             print(f"Speaker device status events: {speaker.status_events}")
 
 
+def _schedule_cli(args: argparse.Namespace) -> int:
+    """No network, Gemini, or microphone: a separate process owns delivery."""
+    store = ScheduleStore(args.db)
+    action = args.schedule_action
+    if action == "timer":
+        item = store.timer(args.seconds, args.text)
+    elif action == "add":
+        item = store.reminder(args.at, args.text)
+    elif action == "list":
+        items = store.list_items(include_history=args.all)
+        if not items:
+            print("No schedules found.")
+        for item in items:
+            local_due = datetime.fromtimestamp(item.due_at).astimezone().isoformat(
+                timespec="seconds"
+            )
+            print(f"{item.id} [{item.status}] {item.kind}: {item.text} — {local_due}")
+        return 0
+    elif action == "cancel":
+        if not store.cancel(args.id):
+            print("No pending schedule with that ID (it may be processing or completed).")
+            return 1
+        print("Schedule cancelled.")
+        return 0
+    elif action == "worker":
+        if args.once:
+            print(f"Delivered {work_once(store)} due schedule(s).")
+            return 0
+        try:
+            run_worker(store)
+        except KeyboardInterrupt:
+            print("\\nFRIDAY scheduler stopped.")
+        return 0
+    else:
+        return 2
+    local_due = datetime.fromtimestamp(item.due_at).astimezone().isoformat(
+        timespec="seconds"
+    )
+    print(f"Created {item.kind} {item.id}: {item.text} — due {local_due}")
+    print("Start 'python -m friday schedule worker' in a separate terminal for alerts.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="friday", description="FRIDAY voice assistant")
     parser.add_argument("--version", action="version", version=__version__)
@@ -434,6 +479,21 @@ def build_parser() -> argparse.ArgumentParser:
     weather = sub.add_parser("weather", help="Check current/tomorrow weather without microphone")
     weather.add_argument("--location", required=True, help="City, state or country (required)")
     weather.add_argument("--day", choices=("today", "tomorrow"), default="today")
+    schedule = sub.add_parser("schedule", help="Local persistent timers and reminders")
+    schedule.add_argument("--db", type=Path, help="Optional SQLite database path")
+    actions = schedule.add_subparsers(dest="schedule_action", required=True)
+    timer = actions.add_parser("timer", help="Create a timer")
+    timer.add_argument("--seconds", type=int, required=True, help="Duration (1–604800)")
+    timer.add_argument("--text", default="Timer finished", help="Notification text")
+    add = actions.add_parser("add", help="Add a one-time reminder")
+    add.add_argument("--at", required=True, help="ISO date/time with UTC offset")
+    add.add_argument("--text", required=True, help="Reminder message")
+    listing = actions.add_parser("list", help="List upcoming reminders and timers")
+    listing.add_argument("--all", action="store_true", help="Include delivered and cancelled")
+    cancel = actions.add_parser("cancel", help="Cancel a pending schedule")
+    cancel.add_argument("id", help="ID displayed by 'schedule list'")
+    worker = actions.add_parser("worker", help="Deliver alerts independently of voice mode")
+    worker.add_argument("--once", action="store_true", help="Process currently due jobs then exit")
     talk = sub.add_parser("talk", help="Live microphone -> Gemini -> speaker conversation")
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
@@ -464,6 +524,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Audio devices: available through optional voice dependency (run friday devices)")
         return 0
     try:
+        if args.command == "schedule":
+            return _schedule_cli(args)
         if args.command == "tools":
             for name, policy in build_builtin_registry(
                 enable_local_clock=True, enable_weather=True

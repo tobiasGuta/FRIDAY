@@ -39,7 +39,8 @@
 
 ## Next Phase 1 slice
 
-- Weather introduced in v0.3.8; next: local timers/reminders, after Windows acceptance.
+- v0.3.9 implements local, durable one-time schedule storage and an independent terminal-alert worker. Windows acceptance pending.
+- Next: approved voice writes and optional one-way synchronization with a dedicated FRIDAY Google Calendar for iPhone visibility. A calendar entry is not an independently running FRIDAY worker.
 
 ## v0.3.2–v0.3.7 — Web search (Tavily backend implemented; Windows accepted)
 

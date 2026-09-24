@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.9 — Durable scheduling foundation (Windows acceptance pending)
+
+- Add SQLite-backed one-time timers/reminders with list, cancel and delivery history.
+- Add independent APScheduler 3.x worker with a one-worker lease, atomic claims,
+  bounded retries and restart recovery; initial notification is console-only.
+- Require explicit UTC offset for calendar reminders; never guess ambiguous times.
+- Keep the existing voice session, Gemini tools, weather and search unchanged.
+- Defer Google Calendar OAuth/sync, phone notifications and recurring schedules.
+
+
 ## 0.3.8 follow-up — Exact city/region weather matching
 
 - Resolve an explicitly named city and state/country against geocoder
