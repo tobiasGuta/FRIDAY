@@ -143,7 +143,10 @@ def test_live_clock_tool_roundtrip_and_unknown_calls_are_rejected(monkeypatch):
             assert [r.id for r in session.tool_responses] == [
                 "clock-1", "bad-2", "bad-3"
             ]
-            assert all(r.name == call.name for r, call in zip(session.tool_responses, calls))
+            assert all(
+                r.name == call.name
+                for r, call in zip(session.tool_responses, calls, strict=True)
+            )
             results = [r.response["result"] for r in session.tool_responses]
             assert results[0]["time_12h"] == "9:53:12 PM"
             assert results[0]["source"] == "computer_local_clock"
