@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Protocol
 
+from friday.audio.devices import AudioDeviceError
 from friday.core.session import SessionManager
 
 
@@ -73,8 +74,12 @@ class VoiceTurns:
         self.microphone.stop()
         sender, self._sender = self._sender, None
         if sender is not None:
-            # A failed sender must not silently signal a successfully delivered turn.
-            await sender
+            # Give queued microphone frames a bounded chance to reach Gemini.
+            # Never send activity_end after a failed or stalled audio sender.
+            try:
+                await asyncio.wait_for(sender, timeout=5.0)
+            except TimeoutError as exc:
+                raise AudioDeviceError("Microphone audio send stalled") from exc
         # Do not admit another recording until Gemini finishes and playback drains.
         self.awaiting_response = True
         await self.manager.end_activity()
