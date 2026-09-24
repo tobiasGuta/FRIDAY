@@ -36,7 +36,7 @@ from friday.audio.devices import AudioDeviceError, Microphone, Speaker
 from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
 from friday.providers.gemini_live import GeminiLiveProvider
-from friday.schedule import ScheduleStore, WorkerHealth
+from friday.schedule import ScheduleStore, WorkerHealth, read_worker_health
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.voice_reminders import VoiceReminderApproval
 
@@ -281,7 +281,6 @@ class DesktopWindow(QMainWindow):
         self._closing = False
         self._quitting = False
         self._tray: QSystemTrayIcon | None = None
-        self._schedule_store: ScheduleStore | None = None
         self._state = "Disconnected"
         self._draft: dict[str, str] | None = None
         self.setWindowTitle(f"FRIDAY · v{__version__}")
@@ -483,9 +482,7 @@ class DesktopWindow(QMainWindow):
 
     def _refresh_worker_status(self) -> None:
         try:
-            if self._schedule_store is None:
-                self._schedule_store = ScheduleStore()
-            label = _calendar_label(self._schedule_store.worker_health())
+            label = _calendar_label(read_worker_health())
         except (OSError, sqlite3.Error):
             label = "Calendar: status unavailable"
         self.calendar_status.setText(label)
