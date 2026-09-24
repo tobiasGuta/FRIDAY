@@ -281,6 +281,7 @@ class DesktopWindow(QMainWindow):
         self._worker: DesktopThread | None = None
         self._scheduler: SchedulerThread | None = None
         self._scheduler_stop_requested = False
+        self._scheduler_had_error = False
         self._closing = False
         self._quitting = False
         self._tray: QSystemTrayIcon | None = None
@@ -502,6 +503,12 @@ class DesktopWindow(QMainWindow):
         if app is not None:
             app.quit()
 
+    def _tray_notifications_available(self) -> bool:
+        return (
+            self._tray is not None and self._tray.isVisible()
+            and QSystemTrayIcon.supportsMessages()
+        )
+
     def _refresh_worker_status(self) -> None:
         try:
             health = read_worker_health()
@@ -529,10 +536,7 @@ class DesktopWindow(QMainWindow):
             self.scheduler_sync_option.setEnabled(False)
         else:
             self.scheduler_button.setText("Start scheduler")
-            available = (
-                self._tray is not None and self._tray.isVisible()
-                and QSystemTrayIcon.supportsMessages()
-            )
+            available = self._tray_notifications_available()
             self.scheduler_button.setEnabled(
                 available and not self._quitting and not self._closing
             )
@@ -562,10 +566,7 @@ class DesktopWindow(QMainWindow):
         except (OSError, sqlite3.Error):
             self._refresh_worker_status()
             return
-        if (
-            self._tray is None or not self._tray.isVisible()
-            or not QSystemTrayIcon.supportsMessages()
-        ):
+        if not self._tray_notifications_available():
             self._refresh_worker_status()
             return
         thread = SchedulerThread(calendar_enabled=self.scheduler_sync_option.isChecked())
@@ -573,6 +574,7 @@ class DesktopWindow(QMainWindow):
         thread.notice.connect(self._scheduler_notice_received)
         thread.finished.connect(self._scheduler_finished)
         self._scheduler = thread
+        self._scheduler_had_error = False
         self.scheduler_notice.setText(
             "Scheduler running in FRIDAY. Hide the window to keep it active."
         )
@@ -581,10 +583,7 @@ class DesktopWindow(QMainWindow):
 
     def _show_scheduler_alert(self, alert: AlertRequest) -> None:
         try:
-            if (
-                self._tray is not None and self._tray.isVisible()
-                and QSystemTrayIcon.supportsMessages()
-            ):
+            if self._tray_notifications_available():
                 title = "FRIDAY reminder" if alert.kind == "reminder" else "FRIDAY timer"
                 self._tray.showMessage(
                     title, alert.text, QSystemTrayIcon.MessageIcon.Information, 10000
@@ -594,6 +593,7 @@ class DesktopWindow(QMainWindow):
             alert.done.set()
 
     def _scheduler_notice_received(self, message: str) -> None:
+        self._scheduler_had_error = True
         self.scheduler_notice.setText(message)
 
     def _scheduler_finished(self) -> None:
@@ -601,6 +601,10 @@ class DesktopWindow(QMainWindow):
             self._scheduler.deleteLater()
             self._scheduler = None
         self._scheduler_stop_requested = False
+        if not self._scheduler_had_error:
+            self.scheduler_notice.setText(
+                "Scheduler stopped. Reminders require a running worker to be delivered."
+            )
         self._refresh_worker_status()
         if self._quitting:
             self._finish_quit()
