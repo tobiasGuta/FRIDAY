@@ -1,7 +1,7 @@
 """Gemini Live adapter. This is the only module coupled to google-genai."""
 
 import asyncio
-from collections.abc import AsyncIterator, Iterator
+from collections import abc
 from typing import Any
 
 from friday.config import Settings
@@ -17,7 +17,7 @@ FRIDAY_INSTRUCTION = (
 
 def normalize_gemini_message(
     message: Any, *, output_sample_rate: int = 24000
-) -> Iterator[VoiceEvent]:
+) -> abc.Iterator[VoiceEvent]:
     """Map SDK responses to core events without requiring the SDK during unit tests."""
     content = getattr(message, "server_content", None)
     if content is not None:
@@ -111,7 +111,7 @@ class GeminiLiveProvider:
     async def end_input(self) -> None:
         await self._require_session().send_realtime_input(audio_stream_end=True)
 
-    async def events(self) -> AsyncIterator[VoiceEvent]:
+    async def events(self) -> abc.AsyncIterator[VoiceEvent]:
         session = self._require_session()
         # The SDK receive() iterator can end after a completed model turn;
         # a persistent conversation must call receive() again for later turns.
