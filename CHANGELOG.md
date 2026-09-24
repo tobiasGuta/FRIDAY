@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.3 — Consistent English voice responses (Windows acceptance pending)
+
+- Prefer American English for spoken responses and output transcripts even when
+  automatic input transcription guesses Spanish for short or unclear speech.
+- Ask for clarification in English; change response language only when the user
+  explicitly requests it. Keep Gemini Live native audio and voice settings intact.
+- Add mock Live regression coverage for ordinary and reminder-enabled sessions.
+
+
 ## 0.4.2 — Voice reminder listing, editing, cancellation (Windows acceptance pending)
 
 - Add read-only `get_reminders` and two non-mutating draft functions for edits

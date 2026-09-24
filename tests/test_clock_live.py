@@ -248,3 +248,42 @@ def test_clock_tool_intermediate_completion_does_not_finish_spoken_turn(
             await adapter.close()
 
     asyncio.run(scenario())
+
+
+def test_voice_defaults_to_english_even_when_auto_transcription_guesses_spanish(
+    monkeypatch, tmp_path,
+):
+    """Language preference applies to both ordinary and reminder-enabled Live sessions."""
+    from friday.schedule import ScheduleStore
+    from friday.voice_reminders import VoiceReminderApproval
+
+    _session, clients = install_mock_sdk(monkeypatch, [])
+
+    async def scenario():
+        settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key")
+        ordinary = GeminiLiveProvider(settings, enable_local_clock=True)
+        await ordinary.connect()
+        try:
+            instruction = clients[0].config.system_instruction
+            assert "American English" in instruction
+            assert "automatic speech" in instruction
+            assert "Never switch to Spanish" in instruction
+            assert "ask in English for a repeat" in instruction
+        finally:
+            await ordinary.close()
+
+        approved = VoiceReminderApproval(ScheduleStore(tmp_path / "schedules.sqlite3"))
+        reminder_session = GeminiLiveProvider(
+            settings, enable_local_clock=True, reminder_approval=approved
+        )
+        await reminder_session.connect()
+        try:
+            instruction = clients[1].config.system_instruction
+            assert "American English" in instruction
+            assert "Never switch to Spanish" in instruction
+            assert "get_reminders" in instruction
+            assert "application controls approval" in instruction
+        finally:
+            await reminder_session.close()
+
+    asyncio.run(scenario())
