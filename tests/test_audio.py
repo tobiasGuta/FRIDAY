@@ -115,6 +115,23 @@ def test_speaker_overflow_stays_bounded_and_uses_latest_samples():
         speaker.enqueue(b"\x01", sample_rate=24000)
 
 
+def test_speaker_drain_waits_for_output_callback():
+    async def scenario():
+        sd = Backend()
+        speaker = Speaker(backend=sd, blocksize=4)
+        speaker.start()
+        speaker.enqueue(b"\x01\x00\x02\x00", sample_rate=24000)
+        waiter = asyncio.create_task(speaker.wait_until_drained(timeout=0.2))
+        await asyncio.sleep(0)
+        assert not waiter.done()
+        sd.output_stream.kwargs["callback"](bytearray(4), 2, None, None)
+        assert await waiter is True
+        assert speaker.pending_bytes == 0
+        speaker.close()
+
+    asyncio.run(scenario())
+
+
 def test_failed_device_open_is_cleaned_up():
     class BrokenStream(Stream):
         def start(self):
