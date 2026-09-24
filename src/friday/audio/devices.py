@@ -115,6 +115,25 @@ class Microphone:
             ) from exc
         self._stream = stream
 
+    def check_health(self) -> None:
+        """Detect removal/inactivation of an open mic during a voice turn.
+
+        PortAudio status flags alone may be transient overflows. The stream's
+        active flag is a stronger signal that capture has stopped. A backend
+        without an active flag remains compatible with existing fake devices.
+        """
+        if not self._recording:
+            return
+        stream = self._stream
+        if stream is None:
+            raise AudioDeviceError("Microphone capture stopped unexpectedly")
+        try:
+            active = getattr(stream, "active", True)
+        except Exception as exc:
+            raise AudioDeviceError("Unable to check microphone status") from exc
+        if not active:
+            raise AudioDeviceError("Microphone disconnected or stopped during recording")
+
     def stop(self) -> None:
         """Stop capture and deliver every already queued frame before the sentinel."""
         self._recording = False
