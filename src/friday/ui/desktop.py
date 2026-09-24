@@ -301,6 +301,7 @@ class DesktopWindow(QMainWindow):
         self._scheduler: SchedulerThread | None = None
         self._academic_sync: AcademicSyncThread | None = None
         self._academic_synced_session = False
+        self._academic_cache_ready = False
         self._scheduler_stop_requested = False
         self._scheduler_had_error = False
         self._closing = False
@@ -472,7 +473,9 @@ class DesktopWindow(QMainWindow):
         self.academic_auto_option = QCheckBox("Refresh every 30 min while scheduler runs")
         self.academic_auto_option.setChecked(False)
         academic_layout.addWidget(self.academic_auto_option)
-        self.academic_voice_option = QCheckBox("Enable read-only academic voice lookup")
+        self.academic_voice_option = QCheckBox(
+            "Enable read-only academic voice lookup (next connection)"
+        )
         self.academic_voice_option.setChecked(False)
         academic_layout.addWidget(self.academic_voice_option)
         self.academic_list = QListWidget()
@@ -582,8 +585,10 @@ class DesktopWindow(QMainWindow):
         except (BrightspaceError, OSError, ValueError):
             self.academic_status.setText("Brightspace: local cache unavailable")
             self.academic_list.clear()
+            self._academic_cache_ready = False
             self.academic_voice_option.setEnabled(False)
             return
+        self._academic_cache_ready = bool(last)
         self.academic_list.clear()
         for item in snapshot.items:
             label = "Due" if item.explicit_due else "Scheduled"
@@ -603,9 +608,7 @@ class DesktopWindow(QMainWindow):
                 self.academic_status.setText("Brightspace: cached; sync timestamp unavailable")
         else:
             self.academic_status.setText("Brightspace: not synced")
-        self.academic_voice_option.setEnabled(
-            bool(last) and not self._quitting and not self._closing
-        )
+        self._set_state(self._state)
         if not last:
             self.academic_voice_option.setChecked(False)
 
@@ -852,6 +855,11 @@ class DesktopWindow(QMainWindow):
         )
         self.approve_button.setEnabled(ready and self._draft is not None)
         self.reject_button.setEnabled(ready and self._draft is not None)
+        self.academic_voice_option.setEnabled(
+            self._academic_cache_ready
+            and state in {"Disconnected", "Connection failed", *recoverable}
+            and not self._quitting and not self._closing
+        )
 
     def _connect_or_disconnect(self) -> None:
         if self._worker is not None:
