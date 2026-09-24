@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 — Voice-turn reliability (2026-09-23)
+
+- Wait for model turn completion and local speaker-buffer drain before starting another recording.
+- Keep /quit responsive, bound terminal-command buffering and discard Enter presses made during playback.
+- Add a bounded response timeout and regression tests for overlapping turns, interruption and playback drain.
+- Clean up the two import blocks flagged by Ruff in v0.2.
+
+A Windows hardware retest is still required. Acoustic echo cancellation and hands-free barge-in
+are not implemented.
+
 ## 0.2.0 — Voice Vertical Slice (2026-09-23)
 
 - New opt-in `talk` command with bounded 16 kHz microphone capture and 24 kHz speaker playback.
