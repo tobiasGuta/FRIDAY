@@ -760,8 +760,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "web-check":
             return asyncio.run(_web_check(args, settings))
         if args.command == "desktop":
-            if args.max_seconds is not None and args.max_seconds < 5:
-                raise ValueError("--max-seconds must be at least 5")
+            if args.max_seconds is not None and not 5 <= args.max_seconds <= 3600:
+                raise ValueError("--max-seconds must be 5 to 3600")
             try:
                 from friday.ui.desktop import launch_desktop
             except ModuleNotFoundError as exc:
