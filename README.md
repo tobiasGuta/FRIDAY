@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.3.3 adds safe connection diagnostics for the Search integration.**
+A harness-first personal AI assistant. **v0.3.4 routes opt-in web lookup through a separate grounded text request, preserving the tested Live voice connection.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.3.3)
+## What works today (v0.3.4)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -15,7 +15,7 @@ FRIDAY owns the application lifecycle, event types, provider interface and confi
 - `friday devices`: list available PortAudio microphone and speaker device indices.
 - `friday clock`: read your computer's local date, time, and configured timezone entirely offline.
 - `friday tools`: list enabled application tools and policies without an API key.
-- `friday talk --web`: opt in to Gemini Live Google Search grounding with provider-supplied source URLs and a temporary browser preview of Google Search suggestions.
+- `friday talk --web`: opt in to FRIDAY's `search_web` function. A separate Gemini 3.8 Flash text request performs Google Search grounding; FRIDAY displays actual returned source URLs and a temporary browser preview of Google's Search Suggestions.
 - `friday talk` and `friday live`: Gemini may call the narrowly allowlisted `get_local_time` function instead of guessing the current date or time.
 - Session state changes, idempotent shutdown, bounded event queue, basic session metrics, and automated tests.
 
@@ -93,49 +93,46 @@ If the sounddevice/PortAudio backend cannot open a device, FRIDAY reports a loca
 
 **Validation boundary:** Offline automated tests cover fake audio device callbacks, PCM framing, buffer limits, two-turn delivery, interruption flush, and cleanup. They do not prove that an individual Windows microphone, sound driver, or Gemini account works; test with real hardware and your own key. The `talk` command uses API quota. No local raw recordings are persisted by default.
 
-### Opt-in live Google Search (v0.3.3)
+### Opt-in grounded web search (v0.3.4)
 
-Google Search is **off by default** so ordinary conversations do not unexpectedly
-trigger search-grounding usage. To enable it for one voice session:
+Search is **off by default**. To enable it for one voice session:
 
 ```powershell
 py -m friday talk --input-device 1 --web
 ```
 
-Try “Friday, search the web for the latest Python release and tell me the date.”
-Gemini chooses whether to use search; enabling it does not guarantee a search or
-that every claim has a source. FRIDAY displays only source URLs actually supplied
-in the Live grounding metadata. If Google supplies Search Suggestions markup,
-FRIDAY opens a temporary local page in your default browser with her transcribed
-answer, source links, and Google's own suggestion widget in a sandboxed frame.
-The temporary page is removed when the voice session exits; don't rely on it as
-persistent history. Use a browser that supports local HTML previews to see the
-suggestions. FRIDAY never executes source-page content, fetches links on her own,
-or treats website content as an instruction to control your computer. Search may
-have distinct quota/billing implications; check the Google AI Studio project.
-The standalone `friday tools` command lists FRIDAY-owned functions and does not
-list provider-native Google Search, which is opted into separately with `--web`.
-The normal command and the `FRIDAY [Enter: talk/stop, /quit]:` prompt are unchanged.
+Ask, “Friday, search the web for the latest Python release and give me a source.”
+FRIDAY's already-working Live connection exposes a strictly validated, read-only
+`search_web` function alongside `get_local_time`. When requested, that
+function makes a **separate** Gemini `generate_content` text request with Google's
+Search grounding tool, using `FRIDAY_SEARCH_MODEL` (default `gemini-3.8-flash`).
+Native Google Search is **not** declared on the Live connection: on this
+project/model, even a minimal native-Search connection returned APIError 1011.
+This workaround does not claim to fix that upstream failure.
 
-### Diagnose Google Search setup
-
-If `talk --web` fails before connecting, check Search alone and then Search
-combined with the clock, without opening a microphone or sending a search query:
+The application passes an answer to the voice model only if Google returns
+usable HTTPS source URLs. If Search fails or grounding contains no usable URLs,
+FRIDAY reports an error rather than inventing citations. Actual source links
+appear in the terminal; Google Search Suggestions, if returned, appear in a
+disposable sandboxed local browser preview. Preview files are removed after
+the voice session. No search history is stored. The tool request sends the
+model-selected question to a second text API request, which may incur separate
+model/Search charges. It does not fetch arbitrary links, follow instructions
+embedded in web content, or grant computer control.
 
 ```powershell
+# Without a microphone or search query; checks the delegated Live tool declaration:
 py -m friday web-check
 py -m friday web-check --with-clock
 ```
 
-These commands open a Gemini Live API session briefly and close it; they do
-not generate speech or execute Search queries, but account-level connection
-limits may apply. Any failure displays the error type and structured status or
-numeric close code **without printing the provider's raw message, API key, URL,
-or request headers**. A passing connection check verifies setup acceptance only,
-not that a real search result is returned. Do not assume any failure is a quota
-issue without an error code.
+A passing `web-check` verifies the Live function setup only, **not** that
+the separate grounded text request or resulting speech works. The full acceptance
+test is `talk --web` with a real question. The usual `talk` command
+and the exact `FRIDAY [Enter: talk/stop, /quit]:` prompt are unchanged.
 
 ## Architecture
+
 
 ```text
 CLI / future desktop UI + opt-in PortAudio mic/speaker

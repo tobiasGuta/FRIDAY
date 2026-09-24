@@ -11,7 +11,9 @@ from friday.core.events import EventKind, SearchSource, VoiceEvent
 from friday.core.session import SessionManager
 from friday.providers.fake import FakeVoiceProvider
 from friday.providers.gemini_live import GeminiLiveProvider, normalize_gemini_message
+from friday.tools.registry import ToolRegistry
 from friday.tools.search_grounding import SearchPreview, extract_search_grounding
+from friday.tools.web_search import WebSearchService, register_web_search
 from friday.ui.cli import _voice_events, _web_check, build_parser
 
 
@@ -91,7 +93,7 @@ def test_search_preview_escapes_untrusted_text_and_uses_google_widget(tmp_path):
     assert "&lt;img src=x" in page
 
 
-def test_google_search_is_explicit_opt_in_and_coexists_with_clock(monkeypatch):
+def test_delegated_search_is_explicit_opt_in_and_coexists_with_clock(monkeypatch):
     session, clients = install_mock_sdk(monkeypatch, [])
 
     async def scenario():
@@ -107,12 +109,12 @@ def test_google_search_is_explicit_opt_in_and_coexists_with_clock(monkeypatch):
             enable_web_search=True,
         )
         await grounded.connect()
-        assert clients[1].config.tools[0] == {"google_search": {}}
-        assert [d["name"] for d in clients[1].config.tools[1]["function_declarations"]] == [
-            "get_local_time"
+        assert [d["name"] for d in clients[1].config.tools[0]["function_declarations"]] == [
+            "get_local_time", "search_web"
         ]
-        assert "Google Search" in clients[1].config.system_instruction
-        assert "Google Search" not in clients[0].config.system_instruction
+        assert not any("google_search" in tool for tool in clients[1].config.tools)
+        assert "search_web" in clients[1].config.system_instruction
+        assert "search_web" not in clients[0].config.system_instruction
         await grounded.close()
 
         async def grounded_receive():
@@ -189,20 +191,19 @@ def test_web_check_uses_no_microphone_or_prompt(monkeypatch, capsys):
     async def scenario():
         settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key")
         assert await _web_check(Obj(with_clock=False), settings) == 0
-        assert clients[0].config.tools == [{"google_search": {}}]
+        assert [d["name"] for d in clients[0].config.tools[0]["function_declarations"]] == ["search_web"]
         assert clients[0].config.realtime_input_config.automatic_activity_detection.disabled
         assert await _web_check(Obj(with_clock=True), settings) == 0
-        assert clients[1].config.tools[0] == {"google_search": {}}
-        assert clients[1].config.tools[1]["function_declarations"][0]["name"] == (
-            "get_local_time"
-        )
+        assert [d["name"] for d in clients[1].config.tools[0]["function_declarations"]] == [
+            "get_local_time", "search_web"
+        ]
         assert session.tool_responses == []
         assert not hasattr(session, "sent")
 
     asyncio.run(scenario())
     out = capsys.readouterr().out
-    assert "Search only" in out
-    assert "Search + local clock" in out
+    assert "Delegated search only" in out
+    assert "Delegated search + local clock" in out
 
 
 def test_web_check_parser_defaults_to_search_only():
@@ -210,3 +211,109 @@ def test_web_check_parser_defaults_to_search_only():
     combined = build_parser().parse_args(["web-check", "--with-clock"])
     assert not alone.with_clock
     assert combined.with_clock
+
+
+
+def test_delegated_search_strict_opt_in_and_input_validation(monkeypatch):
+    calls = []
+    monkeypatch.setattr(WebSearchService, "search", lambda _self, q: calls.append(q) or {
+        "status": "ok", "answer": "Test answer", "sources": [
+            {"title": "Example", "url": "https://example.com"}
+        ],
+    })
+    settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key")
+    registry = ToolRegistry()
+    register_web_search(registry, WebSearchService(settings))
+    assert [d["name"] for d in registry.declarations()] == ["search_web"]
+    assert registry.execute("search_web", {"query": "x"}) == {
+        "status": "error", "error": "invalid_arguments"
+    }
+    assert registry.execute("search_web", {"query": "latest news", "shell": "cmd"}) == {
+        "status": "error", "error": "invalid_arguments"
+    }
+    assert registry.execute("search_web", {"query": "latest news"})["answer"] == "Test answer"
+    assert calls == ["latest news"]
+
+
+def test_separate_grounded_request_uses_text_model_and_actual_sources(monkeypatch):
+    import sys
+    from types import ModuleType
+
+    calls = []
+    metadata = Obj(
+        grounding_chunks=[Obj(web=Obj(uri="https://example.com/official", title="Official"))],
+        search_entry_point=Obj(rendered_content="<p>Search</p>"),
+    )
+    response = Obj(text="Verified release", candidates=[Obj(grounding_metadata=metadata)])
+    class Client:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs))
+            self.models = Obj(generate_content=self.generate)
+        def generate(self, **kwargs):
+            calls.append(("request", kwargs))
+            return response
+        def close(self):
+            calls.append(("close",))
+
+    google = ModuleType("google")
+    google.__path__ = []
+    genai = ModuleType("google.genai")
+    genai.Client = Client
+    types = ModuleType("google.genai.types")
+    for name in ("HttpOptions", "GenerateContentConfig", "Tool", "GoogleSearch"):
+        setattr(types, name, lambda **kwargs: Obj(**kwargs))
+    genai.types = types
+    google.genai = genai
+    monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", types)
+    settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key")
+    result = WebSearchService(settings).search("current Python release")
+    assert result["status"] == "ok"
+    assert result["sources"] == [{"title": "Official", "url": "https://example.com/official"}]
+    assert result["search_suggestions_html"] == "<p>Search</p>"
+    assert calls[1][1]["model"] == "gemini-3.8-flash"
+    assert calls[1][1]["config"].tools[0].google_search is not None
+    assert calls[2] == ("close",)
+    response.candidates = [Obj(grounding_metadata=None)]
+    assert WebSearchService(settings).search("current Python release") == {
+        "status": "error", "error": "no_grounding_sources"
+    }
+
+
+def test_search_tool_roundtrip_returns_grounding_without_html_or_premature_completion(
+    monkeypatch,
+):
+    call = Obj(id="web-1", name="search_web", args={"query": "latest Python release"})
+    session, clients = install_mock_sdk(monkeypatch, [call])
+    monkeypatch.setattr(WebSearchService, "search", lambda _self, _query: {
+        "status": "ok", "answer": "Python release details", "sources": [
+            {"title": "Official", "url": "https://example.com/official"}
+        ], "search_suggestions_html": "<p>Google widget</p>",
+    })
+
+    async def scenario():
+        adapter = GeminiLiveProvider(
+            Settings(_env_file=None, GEMINI_API_KEY="mock-key"),
+            enable_web_search=True, enable_local_clock=True,
+        )
+        await adapter.connect()
+        try:
+            assert not any("google_search" in tool for tool in clients[0].config.tools)
+            events = []
+            async with asyncio.timeout(1):
+                async for event in adapter.events():
+                    events.append(event)
+                    if event.kind is EventKind.TURN_COMPLETE:
+                        break
+            assert events[0].kind is EventKind.GROUNDING
+            assert events[0].sources == (SearchSource("Official", "https://example.com/official"),)
+            assert events[0].search_suggestions_html == "<p>Google widget</p>"
+            response = session.tool_responses[0].response["result"]
+            assert response["answer"] == "Python release details"
+            assert "search_suggestions_html" not in response
+            assert events[-1].kind is EventKind.TURN_COMPLETE
+        finally:
+            await adapter.close()
+
+    asyncio.run(scenario())

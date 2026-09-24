@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.4 — Delegated grounded web search
+
+- Replace native Google Search in the Live setup (minimal connection failed with 1011)
+  with a read-only, typed `search_web` function.
+- Use a separate Gemini 3.8 Flash `generate_content` call with Google's Search tool
+  when the user requests current information, without changing normal voice setup.
+- Require provider-supplied usable HTTPS sources before claiming a grounded answer.
+- Pass bounded answer/source data to Live, and send Search Suggestions only to the UI.
+- Enforce query length, blocking-call timeout, redacted errors and opt-in `--web`.
+- Extend offline tests for tool configuration, input validation, source handling and
+  voice function-call round trips. Real Google/Search/Windows acceptance remains pending.
+
+
 ## 0.3.3 — Web connection diagnostics
 
 - Fix Ruff import ordering in the offline web-search tests.

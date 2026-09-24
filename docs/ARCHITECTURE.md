@@ -88,3 +88,17 @@ Google's suggestion markup is shown in a sandboxed browser frame in a temporary
 local file removed at session shutdown. No web pages are fetched or indexed by
 FRIDAY; grounded content does not become a computer-action instruction. Source
 links are not claimed when the provider supplies no usable grounding metadata.
+
+## v0.3.4 delegated search
+
+Native `google_search` caused a Live setup failure even in isolation, so the
+Live session now declares only SDK-neutral FRIDAY functions. The read-only
+`search_web(query)` tool uses a bounded sync text `generate_content`
+request in a worker thread with the provider's native grounding tool. The tool
+registry validates the query before any request; the adapter returns only
+a bounded answer and vetted HTTPS source URLs to Live. Search Suggestions are
+emitted as a normalized GROUNDING event for the temporary browser UI, never
+as model input. Missing grounding and API errors return explicit errors, not
+uncited answers. Existing manual voice/audio handling and `get_local_time`
+are unchanged; search usage may incur additional cost. The diagnostic
+`web-check` now checks the delegated function declaration, not native Search.

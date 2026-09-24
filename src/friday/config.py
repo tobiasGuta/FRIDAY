@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     provider: Literal["fake", "gemini"] = "fake"
     model: str = "gemini-3.8-live"
     voice: str = "Kore"
+    search_model: str = "gemini-3.8-flash"
     gemini_api_key: SecretStr | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     # BaseSettings reads environment values as strings; plain int enables parsing.
     input_sample_rate: int = 16000
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
     event_queue_size: int = Field(default=128, ge=4, le=4096)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
-    @field_validator("model", "voice")
+    @field_validator("model", "voice", "search_model")
     @classmethod
     def must_be_nonempty(cls, value: str) -> str:
         if not value.strip():

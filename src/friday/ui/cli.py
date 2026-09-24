@@ -260,8 +260,8 @@ async def _await_voice_response(
 async def _web_check(args: argparse.Namespace, settings: Settings) -> int:
     """Diagnose Live setup with no microphone, speakers, prompt, or search query."""
     settings.require_gemini_key()
-    mode = "Search + local clock" if args.with_clock else "Search only"
-    print(f"Checking Gemini Live setup: {mode} (no microphone or search query).")
+    mode = "Delegated search + local clock" if args.with_clock else "Delegated search only"
+    print(f"Checking Gemini Live function setup: {mode} (no microphone or search query).")
     manager = SessionManager(
         GeminiLiveProvider(
             settings, manual_activity=True, enable_local_clock=args.with_clock,
@@ -271,7 +271,10 @@ async def _web_check(args: argparse.Namespace, settings: Settings) -> int:
     )
     try:
         await manager.start()
-        print(f"Gemini accepted the {mode} connection configuration.")
+        print(
+            f"Gemini accepted the {mode} connection configuration. "
+            "This does not run a search query."
+        )
         return 0
     finally:
         await manager.close()
@@ -319,7 +322,10 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
         print("FRIDAY is connected. Use headphones to avoid microphone/speaker feedback.")
         print("Press ENTER to start speaking, then ENTER again to stop. Type /quit to exit.")
         if args.web:
-            print("Google Search is enabled for this session; usage may be billed separately.")
+            print(
+                "Grounded web search is enabled; each lookup uses a separate "
+                "text API request and may be billed."
+            )
         async with asyncio.timeout(args.max_seconds or settings.max_session_seconds):
             while True:
                 if turns.awaiting_response:
@@ -410,7 +416,7 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--output", help="Explicitly save generated speech as a 24 kHz WAV")
     live.add_argument("--timeout", type=int, default=45, help="Maximum wait in seconds")
     web_check = sub.add_parser(
-        "web-check", help="Check Gemini Search setup without microphone or prompt"
+        "web-check", help="Check delegated search function setup without microphone or prompt"
     )
     web_check.add_argument(
         "--with-clock", action="store_true",
