@@ -2,7 +2,8 @@
 
 import asyncio
 import sys
-from types import ModuleType, SimpleNamespace as Obj
+from types import ModuleType
+from types import SimpleNamespace as Obj
 
 from friday.config import Settings
 from friday.core.events import EventKind
