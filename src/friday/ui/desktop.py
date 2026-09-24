@@ -254,7 +254,9 @@ class DesktopThread(QThread):
         try:
             asyncio.run(self._run_session())
         except AudioDeviceError:
-            self.message.emit("error", "Audio device unavailable. Check connections and permissions.")
+            self.message.emit(
+                "error", "Audio device unavailable. Check connections and permissions."
+            )
             if not self._quit_requested.is_set():
                 self.message.emit("recovery", "audio")
         except (ValueError, SessionError):
