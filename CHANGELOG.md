@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — Phase 1 tool foundation
+
+- Introduce an SDK-independent, allowlisted tool registry with strict Pydantic argument models.
+- Route the existing read-only local clock through the registry without changing its Gemini declaration.
+- Hide approval-gated tools from the model and deny execution until a host-side approval flow exists.
+- Keep a bounded in-memory audit of tool name/policy/outcome only; no arguments or secrets.
+- Add offline `friday tools` introspection and regression tests for typed arguments and Live clock calls.
+- Preserve the Enter-to-talk prompt and manual voice-turn completion.
+
+
 ## 0.2.4 — Tool-assisted spoken turn reliability
 
 - Treat a Gemini Live tool-step completion as intermediate until assistant speech

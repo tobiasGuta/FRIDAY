@@ -24,6 +24,12 @@
 - Mock Live round-trip and deterministic timezone tests.
 - Real headset test still required for this milestone.
 
+## Phase 1 — Everyday assistance
+
+- **v0.3.0:** SDK-independent strict tool registry; migrate the clock, deny model tool requests by default, block approval-gated actions, bounded in-memory audit metadata, offline `friday tools` diagnostics.
+- **Next, one slice at a time:** grounded live web search, weather, and local timers/reminders. Each capability gets validation, permissions and offline tests before live acceptance.
+- Google Calendar, GitHub, Spotify, computer controls, MCP expansion, and opt-in personal memory remain future milestones.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

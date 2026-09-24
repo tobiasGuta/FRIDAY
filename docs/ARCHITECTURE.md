@@ -53,3 +53,13 @@ microphone, speakers, Gemini connection, or consuming API quota. The local clock
 and timezone are shared with Gemini only when the model invokes the function.
 The existing Enter-to-talk state machine and explicit audio activity boundaries
 are unchanged.
+
+## v0.3.0 tool registry
+
+`src/friday/tools/registry.py` owns SDK-independent ToolSpec declarations, strict
+Pydantic ToolArguments validation, read-only vs approval-required policy, and a
+bounded in-memory audit of tool name/policy/outcome. No model-supplied approval
+flag can authorize an action. Only read-only tools are advertised in Gemini Live.
+The provider dispatches tool responses through the registry; it never dynamically
+resolves model-provided names to Python attributes. `get_local_time` remains the
+only built-in model-callable tool. `friday tools` provides offline introspection.

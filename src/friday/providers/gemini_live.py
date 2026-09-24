@@ -7,7 +7,7 @@ from typing import Any
 from friday.config import Settings
 from friday.core.events import EventKind, VoiceEvent
 from friday.core.provider import ProviderCapabilityError
-from friday.tools.local_clock import CLOCK_FUNCTION_DECLARATION, execute_local_tool
+from friday.tools.builtins import build_builtin_registry
 
 FRIDAY_INSTRUCTION = (
     "You are FRIDAY, Tobias's personal AI assistant. Speak naturally and concisely. "
@@ -62,7 +62,7 @@ class GeminiLiveProvider:
     ) -> None:
         self.settings = settings
         self._manual_activity = manual_activity
-        self._enable_local_clock = enable_local_clock
+        self._tool_registry = build_builtin_registry(enable_local_clock=enable_local_clock)
         self._activity_open = False
         self._client: Any = None
         self._context: Any = None
@@ -91,8 +91,8 @@ class GeminiLiveProvider:
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             **(
-                {"tools": [{"function_declarations": [CLOCK_FUNCTION_DECLARATION]}]}
-                if self._enable_local_clock
+                {"tools": [{"function_declarations": self._tool_registry.declarations()}]}
+                if self._tool_registry.declarations()
                 else {}
             ),
             **(
@@ -177,10 +177,7 @@ class GeminiLiveProvider:
                     responses = []
                     for call in getattr(tool_call, "function_calls", None) or []:
                         name = getattr(call, "name", None)
-                        result = execute_local_tool(
-                            name if self._enable_local_clock else None,
-                            getattr(call, "args", None),
-                        )
+                        result = self._tool_registry.execute(name, getattr(call, "args", None))
                         responses.append(
                             types.FunctionResponse(
                                 id=call.id, name=name, response={"result": result}
@@ -188,11 +185,7 @@ class GeminiLiveProvider:
                         )
                         yield VoiceEvent(
                             EventKind.NOTICE,
-                            text=(
-                                "Read computer local clock"
-                                if result["status"] == "ok"
-                                else "Unsupported or invalid tool request rejected"
-                            ),
+                            text=self._tool_registry.notice_for(name, result),
                         )
                     if responses:
                         # Set this before yielding any events from the same SDK

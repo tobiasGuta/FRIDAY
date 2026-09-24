@@ -15,6 +15,7 @@ from friday.core.events import EventKind, SessionState, VoiceEvent
 from friday.core.session import SessionError, SessionManager
 from friday.providers.fake import FakeVoiceProvider
 from friday.providers.gemini_live import GeminiLiveProvider
+from friday.tools.builtins import build_builtin_registry
 from friday.tools.local_clock import read_local_clock
 from friday.ui.terminal import TerminalCommands
 
@@ -297,6 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="Show safe configuration diagnostics")
     sub.add_parser("devices", help="List microphone and speaker devices")
     sub.add_parser("clock", help="Read the computer local clock offline (no API usage)")
+    sub.add_parser("tools", help="List enabled tool capabilities offline (no API usage)")
     demo = sub.add_parser("demo", help="Run the no-network fake-provider conversation")
     demo.add_argument("--once", help="Run one fake turn non-interactively")
     live = sub.add_parser("live", help="Opt-in Gemini Live diagnostic (uses your API key)")
@@ -327,6 +329,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Audio devices: available through optional voice dependency (run friday devices)")
         return 0
     try:
+        if args.command == "tools":
+            for name, policy in build_builtin_registry(enable_local_clock=True).available_tools():
+                print(f"{name}: {policy.value}")
+            return 0
         if args.command == "clock":
             current = read_local_clock()
             print(
