@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import math
+import sqlite3
 import threading
 from datetime import datetime
 from typing import Any
 
 from PySide6.QtCore import QPointF, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QRadialGradient
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QRadialGradient
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -22,8 +23,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QMainWindow,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -33,7 +36,7 @@ from friday.audio.devices import AudioDeviceError, Microphone, Speaker
 from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
 from friday.providers.gemini_live import GeminiLiveProvider
-from friday.schedule import ScheduleStore
+from friday.schedule import ScheduleStore, WorkerHealth, read_worker_health
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.voice_reminders import VoiceReminderApproval
 
@@ -72,6 +75,47 @@ def _formatted_at(value: str) -> str:
         return datetime.fromisoformat(value).strftime("%a, %b %d · %I:%M %p")
     except ValueError:
         return value
+
+
+def _app_icon() -> QIcon:
+    """Paint a small, self-contained icon without external asset dependencies."""
+    pixmap = QPixmap(64, 64)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#477CE4"))
+    painter.drawEllipse(3, 3, 58, 58)
+    painter.setPen(QColor("#FFFFFF"))
+    font = painter.font()
+    font.setBold(True)
+    font.setPixelSize(36)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "F")
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _calendar_label(health: WorkerHealth) -> str:
+    if not health.running:
+        return "Calendar: worker not running"
+    if not health.calendar_enabled:
+        return (
+            "Calendar: worker active (sync mode unknown)"
+            if health.calendar_state == "unknown" else "Calendar: worker is local-only"
+        )
+    if health.calendar_state == "waiting":
+        return "Calendar: waiting for first sync"
+    if health.calendar_state == "syncing":
+        return "Calendar: syncing…"
+    if health.last_success is not None:
+        last = datetime.fromtimestamp(health.last_success).strftime("%I:%M %p")
+        if health.calendar_state == "ok":
+            return f"Calendar: sync OK · last success {last}"
+        return f"Calendar: sync failed · last success {last}"
+    return "Calendar: sync failed" if health.calendar_state == "error" else (
+        "Calendar: status unavailable"
+    )
 
 
 class VoiceOrb(QWidget):
@@ -235,14 +279,23 @@ class DesktopWindow(QMainWindow):
         self._max_seconds = max_seconds
         self._worker: DesktopThread | None = None
         self._closing = False
+        self._quitting = False
+        self._tray: QSystemTrayIcon | None = None
         self._state = "Disconnected"
         self._draft: dict[str, str] | None = None
         self.setWindowTitle(f"FRIDAY · v{__version__}")
         self.resize(990, 740)
         self.setMinimumSize(790, 620)
         self.setStyleSheet(STYLE)
+        self.setWindowIcon(_app_icon())
         self._build(reminders, web)
         self._set_state("Disconnected")
+        self._init_tray()
+        self._health_timer = QTimer(self)
+        self._health_timer.setInterval(5000)
+        self._health_timer.timeout.connect(self._refresh_worker_status)
+        self._refresh_worker_status()
+        self._health_timer.start()
 
     @staticmethod
     def _panel() -> QFrame:
@@ -361,13 +414,79 @@ class DesktopWindow(QMainWindow):
         content.addLayout(sidebar, 6)
         outer.addLayout(content, 1)
 
+        self.calendar_status = QLabel("Calendar: checking worker…")
+        self.calendar_status.setObjectName("detail")
+        outer.addWidget(self.calendar_status)
         footer = QLabel(
             "Click-to-talk · No wake word or persistent conversation memory · "
-            "Keep your existing scheduler running for phone sync."
+            "Calendar status is read-only; start the separate scheduler for phone sync."
         )
         footer.setObjectName("subheading")
         footer.setWordWrap(True)
         outer.addWidget(footer)
+
+    def _init_tray(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        tray = QSystemTrayIcon(self.windowIcon(), self)
+        menu = QMenu(self)
+        menu.addAction("Open FRIDAY", self._open_window)
+        menu.addAction("Hide FRIDAY", self.hide)
+        menu.addSeparator()
+        menu.addAction("Quit FRIDAY", self._quit_application)
+        tray.setContextMenu(menu)
+        tray.activated.connect(self._tray_activated)
+        self._tray = tray
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(False)
+        tray.show()
+        self._update_tray_tooltip()
+
+    def _update_tray_tooltip(self) -> None:
+        if self._tray is not None:
+            self._tray.setToolTip(
+                f"FRIDAY · {self._state}\n{self.calendar_status.text()}"
+            )
+
+    def _tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self._open_window()
+
+    def _open_window(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _quit_application(self) -> None:
+        """Only the explicit tray Quit shuts down the retained voice session."""
+        if self._quitting:
+            return
+        self._quitting = True
+        self._health_timer.stop()
+        if self._worker is not None:
+            self._worker.request("quit")
+            self._set_state("Disconnecting")
+            return
+        self._finish_quit()
+
+    def _finish_quit(self) -> None:
+        if self._tray is not None:
+            self._tray.hide()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def _refresh_worker_status(self) -> None:
+        try:
+            label = _calendar_label(read_worker_health())
+        except (OSError, sqlite3.Error):
+            label = "Calendar: status unavailable"
+        self.calendar_status.setText(label)
+        self._update_tray_tooltip()
 
     def _append(self, label: str, text: str) -> None:
         if text:
@@ -377,6 +496,7 @@ class DesktopWindow(QMainWindow):
         self._state = state
         self.status.setText(state)
         self.orb.set_state(state)
+        self._update_tray_tooltip()
         captions = {
             "Disconnected": ("FRIDAY is offline", "Connect when you're ready."),
             "Connecting": ("Connecting to FRIDAY", "Opening audio and Gemini Live…"),
@@ -500,16 +620,23 @@ class DesktopWindow(QMainWindow):
             self._worker = None
         self._show_draft(None)
         self._set_state("Disconnected")
-        if self._closing:
+        if self._quitting:
+            self._finish_quit()
+        elif self._closing:
             self.close()
 
     def closeEvent(self, event: Any) -> None:
-        if self._worker is not None and self._worker.isRunning():
+        if self._tray is not None and self._tray.isVisible() and not self._quitting:
+            self.hide()
+            event.ignore()
+            return
+        if self._worker is not None:
             self._closing = True
             self._worker.request("quit")
             self._set_state("Disconnecting")
             event.ignore()
             return
+        self._health_timer.stop()
         event.accept()
 
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.1 — Windows desktop lifecycle and calendar visibility (Windows acceptance pending)
+
+- Add a Windows desktop shortcut installer using the repository virtual environment's
+  `pythonw.exe` to launch the existing GUI without a PowerShell window.
+- Add a lightweight programmatic tray icon with Open, Hide, and explicit Quit.
+  Closing the window hides it when a system tray is available; Quit requests a
+  graceful voice-session shutdown. Without a tray, ordinary close behavior remains.
+- Record opt-in calendar worker attempts/outcomes under the active SQLite worker lease
+  and display read-only status in the desktop and tray tooltip. Distinguish stopped,
+  local-only, legacy/unknown, first sync, syncing, success and failure.
+- Read worker status without creating, migrating, or writing the user's database.
+  Never launch a second worker, Google OAuth, or calendar sync from the GUI.
+- Add offline tests for stale leases, older workers, successful/failed syncs,
+  read-only observation and hide/reopen behavior. CI covers Windows and Ubuntu.
+- No auto-launch at login, bundled installer, OS toast notifications, wake word,
+  or persistent conversation memory; real Windows tray/shortcut acceptance remains pending.
+
+
 ## 0.5.0 — Opt-in Windows desktop voice shell (Windows hardware acceptance pending)
 
 - Add `friday desktop` with optional PySide6 installed via the `desktop` extra.
