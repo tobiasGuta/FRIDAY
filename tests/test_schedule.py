@@ -137,3 +137,77 @@ def test_cli_is_local_and_does_not_change_talk_parser(tmp_path, capsys):
     assert "Study" in capsys.readouterr().out
     assert build_parser().parse_args(["talk", "--input-device", "1"]).input_device == 1
     assert default_database_path().name == "schedules.sqlite3"
+
+
+def test_edit_reminder_is_guarded_by_revision_and_keeps_same_id(tmp_path):
+    store = ScheduleStore(tmp_path / "edits.sqlite3")
+    when = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    original = store.reminder(when, "Study")
+    new_when = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    modified = store.edit_reminder(original, text="Study more", when=new_when)
+    assert modified is not None
+    assert modified.id == original.id and modified.revision == 1
+    assert modified.text == "Study more"
+    assert store.edit_reminder(original, text="Stale overwrite", when=new_when) is None
+    assert not store.cancel_reminder_if_unchanged(original)
+    assert store.cancel_reminder_if_unchanged(modified)
+    assert store.get_pending_reminder(original.id) is None
+    assert store.list_items(include_history=True)[0].status == "cancelled"
+
+
+def test_edit_rejects_timers_delivered_and_bad_times(tmp_path):
+    store = ScheduleStore(tmp_path / "edit-guards.sqlite3")
+    timer = store.timer(120, "Tea")
+    assert store.get_pending_reminder(timer.id) is None
+    with pytest.raises(ValueError):
+        store.edit_reminder(timer, text="Tea", when="tomorrow")
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    original = store.reminder(future, "Study")
+    for bad in ("2026-01-01T12:00:00+00:00", "tomorrow", "2026-09-27T19:00:00"):
+        with pytest.raises(ValueError):
+            store.edit_reminder(original, text="Study", when=bad)
+    with pytest.raises(ValueError):
+        store.edit_reminder(original, text="bad\ntext", when=future)
+    assert store.get_pending_reminder(original.id).revision == 0
+
+
+def test_existing_database_migrates_revision_without_data_loss(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("""
+            CREATE TABLE schedules (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                text TEXT NOT NULL,
+                due_at REAL NOT NULL,
+                created_at REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                available_at REAL NOT NULL DEFAULT 0,
+                claim_token TEXT,
+                claim_until REAL,
+                delivered_at REAL
+            )
+        """)
+        db.execute(
+            "INSERT INTO schedules(id,kind,text,due_at,created_at) VALUES (?,?,?,?,?)",
+            ("old-id", "reminder", "Preserved", datetime.now(UTC).timestamp() + 86400, 1),
+        )
+    store = ScheduleStore(path)
+    item = store.get_pending_reminder("old-id")
+    assert item is not None and item.revision == 0 and item.text == "Preserved"
+    assert ScheduleStore(path).get_pending_reminder("old-id").text == "Preserved"
+
+
+def test_cli_edit_preserves_id_and_rejects_missing_values(tmp_path, capsys):
+    path = tmp_path / "cli-edit.sqlite3"
+    store = ScheduleStore(path)
+    first = store.reminder((datetime.now(UTC) + timedelta(days=2)).isoformat(), "Study")
+    root = ["schedule", "--db", str(path)]
+    assert main([*root, "edit", first.id, "--text", "Study security"]) == 0
+    assert "Updated reminder" in capsys.readouterr().out
+    assert store.get_pending_reminder(first.id).text == "Study security"
+    assert main([*root, "edit", first.id]) == 1
+    assert store.get_pending_reminder(first.id).revision == 1

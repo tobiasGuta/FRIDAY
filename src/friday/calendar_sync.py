@@ -175,9 +175,18 @@ class CalendarStore:
                     schedule_id TEXT PRIMARY KEY REFERENCES schedules(id),
                     event_id TEXT NOT NULL UNIQUE,
                     state TEXT NOT NULL CHECK(state IN ('linked', 'deleted')),
-                    synced_at REAL NOT NULL
+                    synced_at REAL NOT NULL,
+                    synced_revision INTEGER NOT NULL DEFAULT 0
                 )
             """)
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(friday_calendar_links)")
+            }
+            if "synced_revision" not in columns:
+                db.execute(
+                    "ALTER TABLE friday_calendar_links "
+                    "ADD COLUMN synced_revision INTEGER NOT NULL DEFAULT 0"
+                )
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=5)
@@ -210,7 +219,8 @@ class CalendarStore:
         current = time.time() if now is None else now
         with closing(self._connect()) as db:
             rows = db.execute(
-                """SELECT s.id, s.kind, s.text, s.due_at, s.status, s.attempts
+                """SELECT s.id, s.kind, s.text, s.due_at, s.status, s.attempts,
+                          s.revision
                    FROM schedules AS s
                    LEFT JOIN friday_calendar_links AS l ON l.schedule_id = s.id
                    WHERE s.kind = 'reminder' AND s.status = 'pending'
@@ -219,6 +229,34 @@ class CalendarStore:
                 (current,),
             ).fetchall()
         return [ScheduleStore._record(row) for row in rows]
+
+    def changed_links(self, *, now: float | None = None) -> list[Schedule]:
+        """Pending edits to existing events; include only local revision changes."""
+        current = time.time() if now is None else now
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                """SELECT s.id, s.kind, s.text, s.due_at, s.status, s.attempts,
+                          s.revision
+                   FROM schedules AS s
+                   JOIN friday_calendar_links AS l ON l.schedule_id = s.id
+                   WHERE s.kind = 'reminder' AND s.status = 'pending'
+                     AND s.due_at > ? AND l.state = 'linked'
+                     AND s.revision > l.synced_revision
+                   ORDER BY s.due_at, s.id LIMIT 100""",
+                (current,),
+            ).fetchall()
+        return [ScheduleStore._record(row) for row in rows]
+
+    def mark_updated(self, item: Schedule) -> None:
+        """Acknowledge only the version actually sent to Google."""
+        with closing(self._connect()) as db, db:
+            db.execute(
+                """UPDATE friday_calendar_links
+                   SET synced_revision = ?, synced_at = ?
+                   WHERE schedule_id = ? AND event_id = ? AND state = 'linked'
+                     AND synced_revision < ?""",
+                (item.revision, time.time(), item.id, event_id(item.id), item.revision),
+            )
 
     def cancelled_links(self) -> list[tuple[str, str]]:
         with closing(self._connect()) as db:
@@ -235,9 +273,9 @@ class CalendarStore:
         with closing(self._connect()) as db, db:
             db.execute(
                 """INSERT OR IGNORE INTO friday_calendar_links
-                   (schedule_id, event_id, state, synced_at)
-                   VALUES (?, ?, 'linked', ?)""",
-                (item.id, event_id(item.id), time.time()),
+                   (schedule_id, event_id, state, synced_at, synced_revision)
+                   VALUES (?, ?, 'linked', ?, ?)""",
+                (item.id, event_id(item.id), time.time(), item.revision),
             )
             row = db.execute(
                 "SELECT event_id, state FROM friday_calendar_links WHERE schedule_id = ?",
@@ -303,7 +341,8 @@ def sync_calendar(store: CalendarStore, service: Any) -> tuple[int, int]:
     created = 0
     cancelled = store.cancelled_links()
     pending = store.pending()
-    if not cancelled and not pending:
+    changed = store.changed_links()
+    if not cancelled and not pending and not changed:
         return created, removed
     try:
         info = service.calendars().get(calendarId=calendar_id).execute()
@@ -325,8 +364,48 @@ def sync_calendar(store: CalendarStore, service: Any) -> tuple[int, int]:
         store.mark_deleted(schedule_id, remote_id)
         removed += 1
 
+    for item in changed:
+        body = event_body(item)
+        try:
+            existing = service.events().get(
+                calendarId=calendar_id, eventId=body["id"]
+            ).execute()
+        except Exception as exc:
+            raise CalendarSyncError(
+                "Existing Google Calendar event could not be verified before an edit."
+            ) from exc
+        properties = existing.get("extendedProperties") if isinstance(existing, dict) else None
+        private = properties.get("private") if isinstance(properties, dict) else None
+        if (
+            not isinstance(existing, dict) or existing.get("id") != body["id"]
+            or not isinstance(private, dict) or private.get("fridayScheduleId") != item.id
+        ):
+            raise CalendarSyncError("The linked Google event does not belong to this reminder.")
+        try:
+            result = service.events().update(
+                calendarId=calendar_id, eventId=body["id"], body=body,
+                sendUpdates="none",
+            ).execute()
+        except Exception as exc:
+            raise CalendarSyncError(
+                "Google Calendar edit failed; the updated reminder remains in SQLite."
+            ) from exc
+        updated_properties = result.get("extendedProperties") if isinstance(result, dict) else None
+        updated_private = (
+            updated_properties.get("private") if isinstance(updated_properties, dict) else None
+        )
+        if (
+            not isinstance(result, dict) or result.get("id") != body["id"]
+            or not isinstance(updated_private, dict)
+            or updated_private.get("fridayScheduleId") != item.id
+        ):
+            raise CalendarSyncError("Google returned an unverified updated event.")
+        store.mark_updated(item)
+        created += 1
+
     for item in pending:
         body = event_body(item)
+        conflict = False
         try:
             result = service.events().insert(
                 calendarId=calendar_id, body=body, sendUpdates="none"
@@ -336,6 +415,7 @@ def sync_calendar(store: CalendarStore, service: Any) -> tuple[int, int]:
                 raise CalendarSyncError(
                     "Google Calendar publishing failed. The reminder remains in SQLite."
                 ) from exc
+            conflict = True
             try:
                 result = service.events().get(
                     calendarId=calendar_id, eventId=body["id"]
@@ -352,6 +432,25 @@ def sync_calendar(store: CalendarStore, service: Any) -> tuple[int, int]:
             raise CalendarSyncError(
                 "An existing event did not match FRIDAY's reminder; link was not saved."
             )
+        if conflict:
+            # An earlier insert may have succeeded before local link persistence.
+            # An intervening local edit must win, not be acknowledged as synced.
+            try:
+                result = service.events().update(
+                    calendarId=calendar_id, eventId=body["id"],
+                    body=body, sendUpdates="none",
+                ).execute()
+            except Exception as exc:
+                raise CalendarSyncError(
+                    "Could not reconcile an existing FRIDAY event; retry sync later."
+                ) from exc
+            properties = result.get("extendedProperties") if isinstance(result, dict) else None
+            private = properties.get("private") if isinstance(properties, dict) else None
+            if (
+                not isinstance(result, dict) or result.get("id") != body["id"]
+                or not isinstance(private, dict) or private.get("fridayScheduleId") != item.id
+            ):
+                raise CalendarSyncError("Existing event update could not be verified.")
         store.mark_linked(item)
         created += 1
     return created, removed

@@ -11,7 +11,15 @@ from friday.tools.builtins import build_builtin_registry
 from friday.tools.search_grounding import extract_search_grounding
 from friday.tools.weather import WEATHER_TOOL_NAME
 from friday.tools.web_search import SEARCH_TOOL_NAME, WebSearchService, register_web_search
-from friday.voice_reminders import DRAFT_TOOL_NAME, VoiceReminderApproval, register_reminder_draft
+from friday.voice_reminders import (
+    CANCEL_TOOL_NAME,
+    DRAFT_TOOL_NAME,
+    EDIT_TOOL_NAME,
+    LIST_TOOL_NAME,
+    VoiceReminderApproval,
+    register_reminder_draft,
+    register_reminder_management,
+)
 
 FRIDAY_INSTRUCTION = (
     "You are FRIDAY, Tobias's personal AI assistant. Speak naturally and concisely. "
@@ -48,11 +56,16 @@ WEB_SEARCH_INSTRUCTION = (
 
 REMINDER_INSTRUCTION = (
     " When reminder drafting is enabled, use get_local_time before converting relative "
-    "dates. Use draft_reminder only to PROPOSE a future one-time reminder with an "
-    "explicit UTC offset. Never say it has been saved from a draft result. The "
-    "application controls approval: ask for explicit confirmation in a separate "
-    "voice turn. Do not call draft_reminder again for a yes/no response. The terminal "
-    "displays the authoritative save result; do not claim success without it."
+    "dates. Use draft_reminder to PROPOSE a future one-time reminder. For listing, "
+    "use get_reminders and only describe the records returned. For edits or cancellation "
+    "always call get_reminders first, select the exact ID, and use draft_edit_reminder "
+    "or draft_cancel_reminder. If multiple reminders could match the request, ask "
+    "which date/time rather than guessing. Editing requires the complete new text and "
+    "future ISO time with explicit UTC offset. All drafts are non-mutating. Repeat the "
+    "precise existing and proposed details, then ask for approval in a NEW voice turn. "
+    "Do not claim save, edit, or cancellation succeeded from a draft response; the "
+    "the application controls approval and prints the authoritative result. "
+    "Do not call another draft function for a yes/no response."
 )
 
 
@@ -115,6 +128,7 @@ class GeminiLiveProvider:
         self._reminder_approval = reminder_approval
         if reminder_approval is not None:
             register_reminder_draft(self._tool_registry, reminder_approval)
+            register_reminder_management(self._tool_registry, reminder_approval)
         self._activity_open = False
         self._client: Any = None
         self._context: Any = None
@@ -297,12 +311,34 @@ class GeminiLiveProvider:
                             )
                         elif name == SEARCH_TOOL_NAME and result.get("status") == "error":
                             notice = "Web search unavailable; no verified sources returned."
-                        elif name == DRAFT_TOOL_NAME and result.get("status") == "ok":
+                        elif name in {DRAFT_TOOL_NAME, EDIT_TOOL_NAME, CANCEL_TOOL_NAME} and (
+                            result.get("status") == "ok"
+                        ):
+                            action = result.get("action")
+                            if action == "edit":
+                                notice = (
+                                    f"REMINDER EDIT DRAFT [{result['id']}]: "
+                                    f"{result['previous_text']} — {result['previous_at']} "
+                                    f"-> {result['text']} — {result['at']}. "
+                                    "Confirm in the NEXT voice turn or type /approve. "
+                                    "Nothing has changed yet."
+                                )
+                            elif action == "cancel":
+                                notice = (
+                                    f"REMINDER CANCEL DRAFT [{result['id']}]: "
+                                    f"{result['text']} — {result['at']}. "
+                                    "Confirm in the NEXT voice turn or type /approve. "
+                                    "Nothing has been cancelled yet."
+                                )
+                            else:
+                                notice = (
+                                    f"REMINDER DRAFT: {result['text']} — {result['at']}. "
+                                    "Confirm in the NEXT voice turn or type /approve. "
+                                    "Nothing has been saved yet."
+                                )
+                        elif name == LIST_TOOL_NAME and result.get("status") == "ok":
                             notice = (
-                                f"REMINDER DRAFT: {result['text']} — {result['at']}. "
-                                "Say 'yes, create that reminder' in the NEXT voice turn, "
-                                "or type /approve. Say 'cancel reminder' or type /reject "
-                                "to discard. Nothing has been saved yet."
+                                f"Read {len(result['reminders'])} pending reminders from SQLite."
                             )
                         else:
                             notice = self._tool_registry.notice_for(name, result)

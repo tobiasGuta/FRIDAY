@@ -14,10 +14,16 @@ from friday.schedule import ScheduleStore
 from friday.tools.registry import ToolRegistry
 from friday.ui.cli import _voice_events, build_parser
 from friday.voice_reminders import (
+    CANCEL_TOOL_NAME,
     DRAFT_TOOL_NAME,
+    EDIT_TOOL_NAME,
+    LIST_TOOL_NAME,
     DraftReminderArguments,
+    EditReminderArguments,
+    ReminderIdArguments,
     VoiceReminderApproval,
     register_reminder_draft,
+    register_reminder_management,
 )
 
 
@@ -221,7 +227,8 @@ def test_mock_gemini_declares_draft_only_when_explicitly_enabled(monkeypatch, tm
         await enabled.connect()
         try:
             assert [d["name"] for d in clients[1].config.tools[0]["function_declarations"]] == [
-                "get_local_time", DRAFT_TOOL_NAME
+                "get_local_time", DRAFT_TOOL_NAME, LIST_TOOL_NAME,
+            EDIT_TOOL_NAME, CANCEL_TOOL_NAME,
             ]
             assert "application controls approval" in clients[1].config.system_instruction
             assert store.list_items(include_history=True) == []
@@ -242,3 +249,127 @@ def test_argument_validation_is_strict_and_independent_of_model(tmp_path):
     args = DraftReminderArguments(text="Study", at=future_at())
     assert approval.propose(args)["status"] == "ok"
     assert store.list_items(include_history=True) == []
+
+
+def test_listing_requires_exact_id_and_cannot_select_unlisted_reminder(tmp_path):
+    store, approval, registry = ready(tmp_path)
+    register_reminder_management(registry, approval)
+    at = future_at()
+    first = store.reminder(at, "Study")
+    second = store.reminder(at, "Study")
+    listing = registry.execute(LIST_TOOL_NAME, {})
+    assert listing["status"] == "ok"
+    assert {item["id"] for item in listing["reminders"]} == {first.id, second.id}
+    assert registry.execute(EDIT_TOOL_NAME, {
+        "id": "f" * 32, "text": "Changed", "at": at
+    })["error"] == "not_listed_or_stale"
+    assert registry.execute(CANCEL_TOOL_NAME, {"id": second.id})["status"] == "ok"
+    assert approval.pending().original.id == second.id
+    assert approval.reject() == {"status": "rejected"}
+    assert len(store.list_items()) == 2
+
+
+def test_voice_edit_is_proposal_then_approved_cas_edit(tmp_path):
+    store, approval, registry = ready(tmp_path)
+    register_reminder_management(registry, approval)
+    original = store.reminder(future_at(), "Study")
+    registry.execute(LIST_TOOL_NAME, {})
+    next_at = (datetime.now().astimezone() + timedelta(days=3)).isoformat(
+        timespec="seconds"
+    )
+    result = registry.execute(EDIT_TOOL_NAME, {
+        "id": original.id, "text": "Study cybersecurity", "at": next_at
+    })
+    assert result["action"] == "edit"
+    assert store.get_pending_reminder(original.id).text == "Study"
+    approval.begin_turn()
+    approval.hear_user("Yes, move it.")
+    saved = approval.finish_turn()
+    assert saved["status"] == "updated"
+    assert saved["id"] == original.id
+    assert store.get_pending_reminder(original.id).text == "Study cybersecurity"
+    assert store.get_pending_reminder(original.id).revision == 1
+    assert len(store.list_items(include_history=True)) == 1
+    assert registry.execute(CANCEL_TOOL_NAME, {"id": original.id})["error"] == (
+        "not_listed_or_stale"
+    )
+
+
+def test_voice_cancel_is_approval_gated_and_remains_in_history(tmp_path):
+    store, approval, registry = ready(tmp_path)
+    register_reminder_management(registry, approval)
+    first = store.reminder(future_at(), "Test reminder")
+    registry.execute(LIST_TOOL_NAME, {})
+    proposed = registry.execute(CANCEL_TOOL_NAME, {"id": first.id})
+    assert proposed["action"] == "cancel"
+    assert store.get_pending_reminder(first.id) is not None
+    approval.begin_turn()
+    approval.hear_user("Yes.")
+    result = approval.finish_turn()
+    assert result["status"] == "cancelled"
+    assert store.list_items() == []
+    assert store.list_items(include_history=True)[0].status == "cancelled"
+
+
+def test_stale_edit_or_cancel_cannot_apply_after_external_change(tmp_path):
+    store, approval, registry = ready(tmp_path)
+    register_reminder_management(registry, approval)
+    first = store.reminder(future_at(), "Original")
+    registry.execute(LIST_TOOL_NAME, {})
+    registry.execute(CANCEL_TOOL_NAME, {"id": first.id})
+    assert store.edit_reminder(first, text="Changed elsewhere", when=future_at())
+    assert approval.approve()["error"] == "stale_reminder"
+    assert store.get_pending_reminder(first.id).text == "Changed elsewhere"
+    registry.execute(LIST_TOOL_NAME, {})
+    registry.execute(EDIT_TOOL_NAME, {
+        "id": first.id, "text": "New text", "at": future_at()
+    })
+    assert store.cancel(first.id)
+    assert approval.approve()["error"] == "stale_reminder"
+    assert store.list_items(include_history=True)[0].status == "cancelled"
+
+
+def test_approval_for_edit_or_cancel_cannot_occur_in_same_turn(tmp_path):
+    store, approval, registry = ready(tmp_path)
+    register_reminder_management(registry, approval)
+    first = store.reminder(future_at(), "Test")
+    registry.execute(LIST_TOOL_NAME, {})
+    approval.begin_turn()
+    registry.execute(CANCEL_TOOL_NAME, {"id": first.id})
+    approval.hear_user("yes")
+    assert approval.finish_turn() is None
+    assert store.get_pending_reminder(first.id) is not None
+
+
+def test_edit_argument_type_and_no_change_are_rejected(tmp_path):
+    store, approval, registry = ready(tmp_path)
+    register_reminder_management(registry, approval)
+    first = store.reminder(future_at(), "Original")
+    registry.execute(LIST_TOOL_NAME, {})
+    current = approval._local_at(first)
+    assert registry.execute(EDIT_TOOL_NAME, {
+        "id": first.id, "text": "Original", "at": current
+    })["error"] == "no_change"
+    assert registry.execute(EDIT_TOOL_NAME, {
+        "id": first.id, "text": "Changed", "at": "tomorrow"
+    })["status"] == "error"
+    assert registry.execute(CANCEL_TOOL_NAME, {
+        "id": first.id, "approved": True
+    })["error"] == "invalid_arguments"
+    assert store.get_pending_reminder(first.id).revision == 0
+    assert EditReminderArguments(id=first.id, text="New", at=future_at())
+    assert ReminderIdArguments(id=first.id)
+
+
+def test_list_is_bounded_and_timers_do_not_hide_reminders(tmp_path):
+    store, approval, registry = ready(tmp_path)
+    register_reminder_management(registry, approval)
+    for _ in range(30):
+        store.timer(100, "Timer")
+    for _ in range(26):
+        store.reminder(future_at(), "Study")
+    listing = registry.execute(LIST_TOOL_NAME, {})
+    assert listing["status"] == "ok"
+    assert len(listing["reminders"]) == 25
+    assert listing["truncated"] is True
+    assert len({item["id"] for item in listing["reminders"]}) == 25

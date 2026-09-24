@@ -1,56 +1,76 @@
-"""Ephemeral, app-owned reminder drafts with explicit human approval.
+"""App-owned voice reminder proposals and explicit human approval.
 
-Gemini may draft a reminder, but cannot write schedules or authorize a draft.
-Only the host handles approval from an exact user transcript in a later turn
-or an explicit terminal command. No draft survives a voice-session restart.
+The model can read a bounded reminder list and draft changes, but it cannot
+authorize or directly mutate SQLite. Approval applies only to the exact version
+reviewed, and only in a separate user turn or through a terminal command.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from time import monotonic
+from typing import Any
 from uuid import uuid4
 
 from pydantic import Field
 
-from friday.schedule import MAX_TEXT, ScheduleStore, parse_due
-from friday.tools.registry import ToolArguments, ToolRegistry, ToolSpec
+from friday.schedule import MAX_TEXT, Schedule, ScheduleStore, parse_due
+from friday.tools.registry import (
+    NoArguments,
+    ToolArguments,
+    ToolRegistry,
+    ToolSpec,
+)
 
 DRAFT_TOOL_NAME = "draft_reminder"
+LIST_TOOL_NAME = "get_reminders"
+EDIT_TOOL_NAME = "draft_edit_reminder"
+CANCEL_TOOL_NAME = "draft_cancel_reminder"
 APPROVAL_PHRASES = frozenset({
-    "yes",
-    "yes please",
-    "yes create it",
-    "yes create that reminder",
-    "yes create the reminder",
-    "approve reminder",
-    "approve the reminder",
-    "confirm reminder",
-    "confirm the reminder",
+    "yes", "yes please", "yes create it", "yes create that reminder",
+    "yes create the reminder", "yes move it", "yes update it", "yes cancel it",
+    "yes delete it", "approve reminder", "approve the reminder",
+    "confirm reminder", "confirm the reminder",
 })
 REJECTION_PHRASES = frozenset({
-    "no",
-    "no thanks",
-    "no thank you",
-    "cancel reminder",
-    "cancel the reminder",
-    "reject reminder",
-    "reject the reminder",
+    "no", "no thanks", "no thank you", "cancel reminder",
+    "cancel the reminder", "reject reminder", "reject the reminder",
 })
 
 
 class DraftReminderArguments(ToolArguments):
     text: str = Field(
         min_length=1, max_length=MAX_TEXT,
-        description="Brief reminder text, no newlines (maximum 200 characters).",
+        description="Brief reminder text without control characters (maximum 200 characters).",
     )
     at: str = Field(
         min_length=20, max_length=40,
         description=(
-            "Future ISO 8601 date and time with explicit numeric UTC offset, "
-            "for example 2026-09-27T19:00:00-04:00. Use get_local_time first "
-            "for relative dates. Ask for clarification if the time is ambiguous."
+            "Future ISO 8601 date and time with an explicit UTC offset, e.g. "
+            "2026-09-27T19:00:00-04:00. Call get_local_time first for relative dates."
+        ),
+    )
+
+
+class ReminderIdArguments(ToolArguments):
+    id: str = Field(
+        min_length=32, max_length=32,
+        description="Exact 32-character reminder ID returned by get_reminders.",
+    )
+
+
+class EditReminderArguments(ReminderIdArguments):
+    text: str = Field(
+        min_length=1, max_length=MAX_TEXT,
+        description="Complete new reminder text, even when unchanged.",
+    )
+    at: str = Field(
+        min_length=20, max_length=40,
+        description=(
+            "Complete new future ISO 8601 due time including UTC offset, even if unchanged. "
+            "Call get_local_time before interpreting relative dates."
         ),
     )
 
@@ -61,10 +81,12 @@ class ReminderDraft:
     text: str
     at: str
     created_at: float
+    action: str = "create"
+    original: Schedule | None = None
 
 
 class VoiceReminderApproval:
-    """One pending proposal per voice session, never a model-authorized write."""
+    """One ephemeral proposal at a time; only this host can write schedules."""
 
     def __init__(self, store: ScheduleStore, *, ttl_seconds: float = 300.0) -> None:
         if ttl_seconds <= 0:
@@ -72,9 +94,14 @@ class VoiceReminderApproval:
         self.store = store
         self.ttl_seconds = ttl_seconds
         self._pending: ReminderDraft | None = None
+        self._listed: dict[str, Schedule] = {}
         self._eligible_token: str | None = None
         self._transcript_parts: list[str] = []
         self._transcript_overflow = False
+
+    @staticmethod
+    def _local_at(item: Schedule) -> str:
+        return datetime.fromtimestamp(item.due_at).astimezone().isoformat(timespec="seconds")
 
     def pending(self) -> ReminderDraft | None:
         draft = self._pending
@@ -84,11 +111,38 @@ class VoiceReminderApproval:
             return None
         return draft
 
+    def list_reminders(self, _arguments: NoArguments) -> dict[str, Any]:
+        candidates = self.store.list_pending_reminders(limit=26)
+        items = candidates[:25]
+        self._listed = {item.id: item for item in items}
+        return {
+            "status": "ok",
+            "reminders": [
+                {"id": item.id, "text": item.text, "at": self._local_at(item)}
+                for item in items
+            ],
+            "limit": 25,
+            "truncated": len(candidates) > 25,
+            "instruction": (
+                "Use an exact ID from this list for edit/cancel proposals. "
+                "If several reminders match, ask the user to clarify the date and time."
+            ),
+        }
+
+    @staticmethod
+    def _validated_text(text: str) -> str | None:
+        value = text.strip()
+        if not 1 <= len(value) <= MAX_TEXT:
+            return None
+        if any(ord(char) < 32 or ord(char) == 127 for char in text):
+            return None
+        return value
+
     def propose(self, arguments: DraftReminderArguments) -> dict[str, str]:
         if self.pending() is not None:
             return {"status": "error", "error": "pending_approval"}
-        text = arguments.text.strip()
-        if not text or any(ord(char) < 32 or ord(char) == 127 for char in text):
+        text = self._validated_text(arguments.text)
+        if text is None:
             return {"status": "error", "error": "invalid_text"}
         try:
             parse_due(arguments.at)
@@ -97,18 +151,70 @@ class VoiceReminderApproval:
         draft = ReminderDraft(uuid4().hex, text, arguments.at, monotonic())
         self._pending = draft
         return {
-            "status": "ok",
-            "state": "pending_approval",
-            "text": draft.text,
-            "at": draft.at,
+            "status": "ok", "state": "pending_approval", "action": draft.action,
+            "text": draft.text, "at": draft.at,
             "instruction": (
-                "This is only a draft. Ask the user to confirm in a separate voice turn. "
-                "The app alone will save it after explicit user approval."
+                "Only a draft. Ask the user to approve it in a separate voice turn. "
+                "Only the application can save it."
             ),
         }
 
+    def _candidate(self, reminder_id: str) -> Schedule | None:
+        listed = self._listed.get(reminder_id)
+        if listed is None:
+            return None
+        latest = self.store.get_pending_reminder(reminder_id)
+        if latest is None or latest.revision != listed.revision:
+            return None
+        if latest.text != listed.text or latest.due_at != listed.due_at:
+            return None
+        return listed
+
+    def propose_edit(self, arguments: EditReminderArguments) -> dict[str, str]:
+        if self.pending() is not None:
+            return {"status": "error", "error": "pending_approval"}
+        item = self._candidate(arguments.id)
+        if item is None:
+            return {"status": "error", "error": "not_listed_or_stale"}
+        text = self._validated_text(arguments.text)
+        if text is None:
+            return {"status": "error", "error": "invalid_text"}
+        try:
+            due = parse_due(arguments.at)
+        except (TypeError, ValueError):
+            return {"status": "error", "error": "invalid_due_time"}
+        if item.text == text and item.due_at == due.timestamp():
+            return {"status": "error", "error": "no_change"}
+        draft = ReminderDraft(
+            uuid4().hex, text, arguments.at, monotonic(), "edit", item
+        )
+        self._pending = draft
+        return {
+            "status": "ok", "state": "pending_approval", "action": "edit",
+            "id": item.id, "previous_text": item.text,
+            "previous_at": self._local_at(item), "text": text, "at": arguments.at,
+            "instruction": "Ask the user to approve this precise change in a new voice turn.",
+        }
+
+    def propose_cancel(self, arguments: ReminderIdArguments) -> dict[str, str]:
+        if self.pending() is not None:
+            return {"status": "error", "error": "pending_approval"}
+        item = self._candidate(arguments.id)
+        if item is None:
+            return {"status": "error", "error": "not_listed_or_stale"}
+        draft = ReminderDraft(
+            uuid4().hex, item.text, self._local_at(item), monotonic(),
+            "cancel", item,
+        )
+        self._pending = draft
+        return {
+            "status": "ok", "state": "pending_approval", "action": "cancel",
+            "id": item.id, "text": item.text, "at": draft.at,
+            "instruction": "Ask the user to approve cancellation in a new voice turn.",
+        }
+
     def begin_turn(self) -> None:
-        """Freeze eligibility BEFORE recording: no proposal and approval in one turn."""
+        """Freeze eligibility before recording; cannot propose and approve in one turn."""
         draft = self.pending()
         self._eligible_token = draft.token if draft is not None else None
         self._transcript_parts.clear()
@@ -135,7 +241,6 @@ class VoiceReminderApproval:
         return " ".join(re.findall(r"[a-z]+", text.casefold()))
 
     def finish_turn(self) -> dict[str, str] | None:
-        """Only exact affirmative/negative user speech in a subsequent turn counts."""
         token = self._eligible_token
         utterance = "" if self._transcript_overflow else " ".join(self._transcript_parts)
         self.abort_turn()
@@ -154,16 +259,44 @@ class VoiceReminderApproval:
         if draft is None:
             return {"status": "error", "error": "no_pending_reminder"}
         try:
-            item = self.store.reminder(draft.at, draft.text)
+            if draft.action == "create":
+                item = self.store.reminder(draft.at, draft.text)
+                result = {
+                    "status": "created", "id": item.id,
+                    "text": item.text, "at": draft.at,
+                }
+            elif draft.original is not None and draft.action == "edit":
+                item = self.store.edit_reminder(
+                    draft.original, text=draft.text, when=draft.at
+                )
+                if item is None:
+                    self._pending = None
+                    return {"status": "error", "error": "stale_reminder"}
+                result = {
+                    "status": "updated", "id": item.id,
+                    "text": item.text, "at": self._local_at(item),
+                }
+            elif draft.original is not None and draft.action == "cancel":
+                if not self.store.cancel_reminder_if_unchanged(draft.original):
+                    self._pending = None
+                    return {"status": "error", "error": "stale_reminder"}
+                result = {
+                    "status": "cancelled", "id": draft.original.id,
+                    "text": draft.text, "at": draft.at,
+                }
+            else:
+                self._pending = None
+                return {"status": "error", "error": "invalid_draft"}
         except ValueError:
             self._pending = None
-            return {"status": "error", "error": "time_no_longer_valid"}
+            return {"status": "error", "error": "time_or_text_no_longer_valid"}
         except Exception:
-            # Keep the draft for an explicit retry; do not leak SQLite errors.
+            # Preserve the draft for explicit retry; don't expose database details.
             return {"status": "error", "error": "save_failed"}
         self._pending = None
         self._eligible_token = None
-        return {"status": "created", "id": item.id, "text": item.text, "at": draft.at}
+        self._listed.clear()
+        return result
 
     def reject(self) -> dict[str, str]:
         if self.pending() is None:
@@ -178,13 +311,55 @@ def register_reminder_draft(registry: ToolRegistry, approval: VoiceReminderAppro
         ToolSpec(
             name=DRAFT_TOOL_NAME,
             description=(
-                "Draft one future one-time reminder for human review. This NEVER "
-                "creates a reminder or writes to Google Calendar. First obtain "
-                "current local time from get_local_time for relative dates, and "
-                "use an explicit UTC offset. An app-controlled confirmation is required."
+                "Draft a new future one-time reminder; NEVER creates or saves it. "
+                "Use get_local_time for relative dates and an explicit UTC offset."
             ),
             arguments=DraftReminderArguments,
             handler=approval.propose,
-            notice="Reminder proposal processed; no schedule was created.",
+            notice="Reminder proposal processed; nothing saved yet.",
+        )
+    )
+
+
+def register_reminder_management(
+    registry: ToolRegistry, approval: VoiceReminderApproval
+) -> None:
+    """Read-only listing and mutation-free proposals; actual writes stay host-only."""
+    registry.register(
+        ToolSpec(
+            name=LIST_TOOL_NAME,
+            description=(
+                "List current pending future reminders, IDs, text, and local times. "
+                "Call this before identifying any reminder to edit or cancel. "
+                "If names repeat, ask the user which date/time they mean."
+            ),
+            arguments=NoArguments,
+            handler=approval.list_reminders,
+            notice="Read pending reminders from local SQLite.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name=EDIT_TOOL_NAME,
+            description=(
+                "Propose editing ONE exact reminder ID from get_reminders, using the "
+                "complete new text and full future ISO time with UTC offset. Does NOT "
+                "save. Ask the user to confirm the old and new details separately."
+            ),
+            arguments=EditReminderArguments,
+            handler=approval.propose_edit,
+            notice="Proposed reminder edit; no changes saved.",
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name=CANCEL_TOOL_NAME,
+            description=(
+                "Propose cancellation of ONE exact reminder ID from get_reminders. "
+                "This does NOT cancel it. Ask the user to confirm separately."
+            ),
+            arguments=ReminderIdArguments,
+            handler=approval.propose_cancel,
+            notice="Proposed reminder cancellation; nothing cancelled yet.",
         )
     )
