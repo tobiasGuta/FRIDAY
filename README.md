@@ -76,13 +76,13 @@ Press **Enter** to activate the microphone, speak, and press **Enter** again to 
 
 ### Voice reminder management — opt-in (v0.4.2)
 
-**Voice language (v0.4.3):** FRIDAY is instructed to reply in American English
-by default, including when automatic transcription mistakes a short utterance
-for Spanish. She should request clarification in English if needed, and change
-response language only on an explicit request. Gemini Live audio transcription
-can still occasionally mishear or label user speech; the response instruction
-does not force the input transcript language or override the provider's native
-audio language detection.
+**Voice language (v0.4.4):** FRIDAY is instructed to reply in American English
+by default. The `talk` command now also passes an `en-US` language hint to
+Gemini Live's input transcription, which biases short English utterances away
+from accidental Spanish detection. This is a recognition hint, not a guarantee:
+short or unclear input may still be mis-transcribed. Use `--input-language auto`
+for multilingual speech recognition. Neither mode changes the model's native
+AUDIO output, the separate approval gate, or the audio device selection.
 
 
 Start the independent scheduler with Google Calendar sync in one terminal:

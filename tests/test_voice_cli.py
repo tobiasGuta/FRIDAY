@@ -41,6 +41,9 @@ def test_talk_cli_exposes_device_selection_and_timeout():
     assert args.input_device == 2
     assert args.output_device == 4
     assert args.max_seconds == 30
+    assert args.input_language == "en-US"
+    automatic = build_parser().parse_args(["talk", "--input-language", "auto"])
+    assert automatic.input_language == "auto"
 
 
 def test_audio_event_consumer_flushes_on_interrupt():

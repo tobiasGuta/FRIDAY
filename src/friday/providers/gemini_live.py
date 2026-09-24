@@ -120,8 +120,12 @@ class GeminiLiveProvider:
         enable_web_search: bool = False,
         enable_weather: bool = False,
         reminder_approval: VoiceReminderApproval | None = None,
+        input_language: str | None = None,
     ) -> None:
+        if input_language not in (None, "en-US"):
+            raise ValueError("Unsupported input language hint")
         self.settings = settings
+        self._input_language = input_language
         self._manual_activity = manual_activity
         self._tool_registry = build_builtin_registry(
             enable_local_clock=enable_local_clock, enable_weather=enable_weather
@@ -168,7 +172,11 @@ class GeminiLiveProvider:
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.settings.voice)
                 )
             ),
-            input_audio_transcription=types.AudioTranscriptionConfig(),
+            input_audio_transcription=(
+                types.AudioTranscriptionConfig(language_codes=["en-US"])
+                if self._input_language == "en-US"
+                else types.AudioTranscriptionConfig()
+            ),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             **({"tools": tools} if tools else {}),
             **(

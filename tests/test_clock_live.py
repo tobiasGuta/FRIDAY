@@ -287,3 +287,44 @@ def test_voice_defaults_to_english_even_when_auto_transcription_guesses_spanish(
             await reminder_session.close()
 
     asyncio.run(scenario())
+
+
+def test_live_input_language_hint_and_auto_mode_do_not_modify_audio_output(monkeypatch):
+    """Check Live setup, not merely the wording of its system instruction."""
+    _session, clients = install_mock_sdk(monkeypatch, [])
+
+    async def scenario():
+        settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key")
+        english = GeminiLiveProvider(
+            settings, manual_activity=False, enable_local_clock=True,
+            input_language="en-US",
+        )
+        await english.connect()
+        try:
+            config = clients[0].config
+            assert config.input_audio_transcription.language_codes == ["en-US"]
+            assert config.response_modalities == ["AUDIO"]
+            assert "American English" in config.system_instruction
+        finally:
+            await english.close()
+
+        automatic = GeminiLiveProvider(settings, input_language=None)
+        await automatic.connect()
+        try:
+            config = clients[1].config
+            assert not hasattr(config.input_audio_transcription, "language_codes")
+            assert config.response_modalities == ["AUDIO"]
+        finally:
+            await automatic.close()
+
+    asyncio.run(scenario())
+    with pytest.raises(ValueError, match="Unsupported input language"):
+        GeminiLiveProvider(Settings(_env_file=None), input_language="es-ES")
+
+
+def test_installed_genai_sdk_accepts_english_transcription_hint():
+    """Catch SDK schema regressions without making a paid Live connection."""
+    from google.genai import types
+
+    transcript = types.AudioTranscriptionConfig(language_codes=["en-US"])
+    assert transcript.language_codes == ["en-US"]
