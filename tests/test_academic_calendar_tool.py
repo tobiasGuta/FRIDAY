@@ -55,3 +55,20 @@ def test_upcoming_items_are_sorted_and_bounded(tmp_path):
         now=datetime(2026, 10, 5, 10, tzinfo=UTC), days=7, limit=10
     )
     assert [x.uid for x in result.items] == ["lecture", "deadline"]
+
+
+def test_gemini_academic_tool_is_explicitly_gated():
+    from friday.config import Settings
+    from friday.providers.gemini_live import GeminiLiveProvider
+
+    settings = Settings(_env_file=None)
+    default = GeminiLiveProvider(settings, enable_local_clock=True)
+    enabled = GeminiLiveProvider(
+        settings, enable_local_clock=True, enable_academic_calendar=True
+    )
+    assert ACADEMIC_TOOL_NAME not in [
+        declaration["name"] for declaration in default._tool_registry.declarations()
+    ]
+    assert ACADEMIC_TOOL_NAME in [
+        declaration["name"] for declaration in enabled._tool_registry.declarations()
+    ]
