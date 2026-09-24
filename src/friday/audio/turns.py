@@ -8,6 +8,8 @@ from typing import Protocol
 from friday.audio.devices import AudioDeviceError
 from friday.core.session import SessionManager
 
+SEND_DRAIN_TIMEOUT_SECONDS = 5.0
+
 
 class AudioInput(Protocol):
     dropped_chunks: int
@@ -77,7 +79,7 @@ class VoiceTurns:
             # Give queued microphone frames a bounded chance to reach Gemini.
             # Never send activity_end after a failed or stalled audio sender.
             try:
-                await asyncio.wait_for(sender, timeout=5.0)
+                await asyncio.wait_for(sender, timeout=SEND_DRAIN_TIMEOUT_SECONDS)
             except TimeoutError as exc:
                 raise AudioDeviceError("Microphone audio send stalled") from exc
         # Do not admit another recording until Gemini finishes and playback drains.
