@@ -465,9 +465,16 @@ def work_once(
 
 
 def run_worker(
-    store: ScheduleStore, *, calendar_sync: Callable[[], tuple[int, int]] | None = None
+    store: ScheduleStore, *,
+    calendar_sync: Callable[[], tuple[int, int]] | None = None,
+    notify: Callable[[Schedule], None] = console_notify,
+    stop_event: threading.Event | None = None,
+    foreground: bool = True,
 ) -> None:
-    """APScheduler supplies the periodic tick; SQLite owns durable job state."""
+    """APScheduler drives one leased worker; opt-in GUI workers can stop cooperatively.
+
+    GUI notifications use a separate callback. The default CLI retains console alerts.
+    """
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
     except ImportError as exc:
@@ -488,10 +495,12 @@ def run_worker(
     scheduler = BackgroundScheduler(timezone="UTC")
 
     def tick() -> None:
+        if stop_event is not None and stop_event.is_set():
+            return
         if not store.renew_owner(token):
             lost.set()
             return
-        dispatch_due(store, console_notify)
+        dispatch_due(store, notify)
 
     scheduler.add_job(
         tick, "interval", seconds=1, id="friday-dispatch",
@@ -499,7 +508,7 @@ def run_worker(
     )
 
     def calendar_tick() -> None:
-        if calendar_sync is None:
+        if calendar_sync is None or (stop_event is not None and stop_event.is_set()):
             return
         store.calendar_attempt(token)
         try:
@@ -523,14 +532,17 @@ def run_worker(
             coalesce=True, max_instances=1, misfire_grace_time=30,
         )
     try:
-        print("FRIDAY scheduler running; leave this terminal open. Ctrl+C to stop.")
+        if foreground:
+            print("FRIDAY scheduler running; leave this terminal open. Ctrl+C to stop.")
         tick()
         scheduler.start()
         if calendar_sync is not None:
             calendar_tick()
-        while not lost.wait(0.5):
-            pass
-        raise RuntimeError("FRIDAY scheduler lost its worker lease")
+        while not lost.wait(0.25):
+            if stop_event is not None and stop_event.is_set():
+                break
+        if lost.is_set():
+            raise RuntimeError("FRIDAY scheduler lost its worker lease")
     finally:
         if scheduler.running:
             scheduler.shutdown(wait=True)
