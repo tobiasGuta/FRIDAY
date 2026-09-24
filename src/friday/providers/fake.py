@@ -39,6 +39,12 @@ class FakeVoiceProvider:
     async def end_input(self) -> None:
         raise ProviderCapabilityError("The fake provider does not process audio")
 
+    async def start_activity(self) -> None:
+        raise ProviderCapabilityError("The fake provider does not process audio")
+
+    async def end_activity(self) -> None:
+        raise ProviderCapabilityError("The fake provider does not process audio")
+
     async def events(self) -> AsyncIterator[VoiceEvent]:
         while True:
             event = await self._events.get()

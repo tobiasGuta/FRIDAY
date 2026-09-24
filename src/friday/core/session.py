@@ -152,6 +152,12 @@ class SessionManager:
     async def end_input(self) -> None:
         await self._send("end_input")
 
+    async def start_activity(self) -> None:
+        await self._send("start_activity")
+
+    async def end_activity(self) -> None:
+        await self._send("end_activity")
+
     async def events(self) -> AsyncIterator[VoiceEvent]:
         """Single-consumer event stream; ends after CLOSED is received."""
         while True:

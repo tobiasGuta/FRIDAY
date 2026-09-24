@@ -15,7 +15,10 @@ class RecordingProvider(FakeVoiceProvider):
     async def send_audio(self, pcm):
         self.actions.append(("audio", pcm))
 
-    async def end_input(self):
+    async def start_activity(self):
+        self.actions.append(("start", None))
+
+    async def end_activity(self):
         self.actions.append(("end", None))
 
 
@@ -69,9 +72,11 @@ def test_two_microphone_turns_are_sent_before_end_signal():
             await mic.queue.put(b"\x03\x00")
             await turns.stop()
             assert provider.actions == [
+                ("start", None),
                 ("audio", b"\x01\x00"),
                 ("audio", b"\x02\x00"),
                 ("end", None),
+                ("start", None),
                 ("audio", b"\x03\x00"),
                 ("end", None),
             ]
@@ -94,7 +99,30 @@ def test_close_during_recording_does_not_send_end_or_leave_task():
         await turns.close()
         assert not mic.active
         assert turns._sender is None
-        assert ("end", None) not in provider.actions
+        assert provider.actions == [("start", None)]
         await manager.close()
+
+    asyncio.run(scenario())
+
+
+def test_start_failure_closes_microphone_without_sending_audio():
+    class RejectStart(RecordingProvider):
+        async def start_activity(self):
+            raise RuntimeError("start signal rejected")
+
+    async def scenario():
+        provider = RejectStart()
+        manager = SessionManager(provider)
+        await manager.start()
+        mic = FakeMicrophone()
+        turns = VoiceTurns(manager, mic, FakeSpeaker())
+        try:
+            with pytest.raises(Exception, match="start_activity"):
+                await turns.start()
+            assert not mic.active
+            assert turns._sender is None
+        finally:
+            await turns.close()
+            await manager.close()
 
     asyncio.run(scenario())

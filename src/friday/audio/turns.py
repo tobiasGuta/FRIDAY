@@ -28,21 +28,32 @@ class VoiceTurns:
         self._sender: asyncio.Task[None] | None = None
         self.recording = False
         self.awaiting_response = False
+        self.sent_frames = 0
+        self.sent_bytes = 0
 
     async def start(self) -> None:
         if self.recording:
             raise RuntimeError("Already recording")
         if self.awaiting_response:
             raise RuntimeError("Previous voice turn is still responding")
-        # Explicit barge-in: clear buffered speech before starting the next turn.
+        # Manual VAD: open one explicit activity before any microphone audio.
         self.speaker.flush()
         self.microphone.start()
+        try:
+            await self.manager.start_activity()
+        except BaseException:
+            self.microphone.stop()
+            raise
+        self.sent_frames = 0
+        self.sent_bytes = 0
         self.recording = True
         self._sender = asyncio.create_task(self._send_frames(), name="friday-microphone-sender")
 
     async def _send_frames(self) -> None:
         async for frame in self.microphone.chunks():
             await self.manager.send_audio(frame)
+            self.sent_frames += 1
+            self.sent_bytes += len(frame)
 
     async def stop(self) -> None:
         if not self.recording:
@@ -55,7 +66,7 @@ class VoiceTurns:
             await sender
         # Do not admit another recording until Gemini finishes and playback drains.
         self.awaiting_response = True
-        await self.manager.end_input()
+        await self.manager.end_activity()
 
     def response_finished(self) -> None:
         """Called after provider completion/interruption and local playback drain."""

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 
 from friday import __version__
@@ -93,19 +94,49 @@ async def _live(args: argparse.Namespace, settings: Settings) -> int:
         await manager.close()
 
 
+@dataclass(slots=True)
+class VoiceTurnDiagnostics:
+    user_transcript_chunks: int = 0
+    assistant_audio_bytes: int = 0
+    completions: int = 0
+    interruptions: int = 0
+
+    def reset(self) -> None:
+        self.user_transcript_chunks = 0
+        self.assistant_audio_bytes = 0
+        self.completions = 0
+        self.interruptions = 0
+
+
 async def _voice_events(
-    manager: SessionManager, speaker: Speaker, turn_finished: asyncio.Event | None = None
+    manager: SessionManager,
+    speaker: Speaker,
+    turn_finished: asyncio.Event | None = None,
+    diagnostics: VoiceTurnDiagnostics | None = None,
 ) -> bool:
     """Single consumer: play PCM and print transcripts; return False on provider failure."""
     async for event in manager.events():
         if event.kind is EventKind.AUDIO:
             speaker.enqueue(event.audio or b"", sample_rate=event.sample_rate or 0)
+            if diagnostics is not None:
+                diagnostics.assistant_audio_bytes += len(event.audio or b"")
+        elif event.kind is EventKind.TRANSCRIPT:
+            if diagnostics is not None and event.speaker == "user":
+                diagnostics.user_transcript_chunks += 1
+            _display(event)
         elif event.kind is EventKind.INTERRUPTED:
             speaker.flush()
             _display(event)
         else:
             _display(event)
+        if event.kind is EventKind.TURN_COMPLETE:
+            print("FRIDAY turn complete")
         if event.kind in {EventKind.TURN_COMPLETE, EventKind.INTERRUPTED}:
+            if diagnostics is not None:
+                if event.kind is EventKind.TURN_COMPLETE:
+                    diagnostics.completions += 1
+                else:
+                    diagnostics.interruptions += 1
             if turn_finished is not None:
                 turn_finished.set()
         if event.kind is EventKind.ERROR:
@@ -165,17 +196,21 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
         loop=loop, sample_rate=settings.input_sample_rate, device=args.input_device
     )
     speaker = Speaker(sample_rate=settings.output_sample_rate, device=args.output_device)
-    manager = SessionManager(GeminiLiveProvider(settings), queue_size=settings.event_queue_size)
+    manager = SessionManager(
+        GeminiLiveProvider(settings, manual_activity=True), queue_size=settings.event_queue_size
+    )
     commands = TerminalCommands()
     turns = VoiceTurns(manager, mic, speaker)
     receiver: asyncio.Task[bool] | None = None
     turn_finished = asyncio.Event()
+    diagnostics = VoiceTurnDiagnostics()
     try:
         # If hardware initialization fails, do not open the paid provider connection.
         speaker.start()
         await manager.start()
         receiver = asyncio.create_task(
-            _voice_events(manager, speaker, turn_finished), name="friday-speaker-events"
+            _voice_events(manager, speaker, turn_finished, diagnostics),
+            name="friday-speaker-events"
         )
         commands.start()
         print("FRIDAY is connected. Use headphones to avoid microphone/speaker feedback.")
@@ -189,12 +224,19 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
                     if result == "quit":
                         break
                     if result == "timeout":
-                        print("FRIDAY did not complete the response within 30 seconds.")
+                        print(
+                            "FRIDAY response timed out (30s): "
+                            f"sent_frames={turns.sent_frames}, sent_bytes={turns.sent_bytes}, "
+                            f"user_transcript_chunks={diagnostics.user_transcript_chunks}, "
+                            f"assistant_audio_bytes={diagnostics.assistant_audio_bytes}, "
+                            f"completed={diagnostics.completions}, "
+                            f"interrupted={diagnostics.interruptions}. "
+                            "This does not by itself indicate a quota error."
+                        )
                         return 1
                     if result in {"failed", "closed"}:
                         return 0 if result == "closed" else 1
                     turns.response_finished()
-                    turn_finished.clear()
                     print("FRIDAY is ready. Press Enter to speak.")
                     continue
                 command_task = asyncio.create_task(commands.next())
@@ -212,10 +254,16 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
                     print("Unknown command; press Enter to toggle the microphone or type /quit.")
                     continue
                 if turns.recording:
-                    turn_finished.clear()
                     await turns.stop()
-                    print("Microphone paused. FRIDAY is responding...")
+                    print(
+                        "Microphone paused. FRIDAY is responding... "
+                        f"(sent_frames={turns.sent_frames}, sent_bytes={turns.sent_bytes})"
+                    )
                 else:
+                    # Reset only at the start of a new turn, not after stop: a
+                    # fast completion must remain visible to the response waiter.
+                    turn_finished.clear()
+                    diagnostics.reset()
                     await turns.start()
                     print("Recording... press Enter to stop.")
         return 0

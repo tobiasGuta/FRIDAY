@@ -3,7 +3,12 @@ import asyncio
 from friday.core.events import EventKind, VoiceEvent
 from friday.core.session import SessionManager
 from friday.providers.fake import FakeVoiceProvider
-from friday.ui.cli import _await_voice_response, _voice_events, build_parser
+from friday.ui.cli import (
+    VoiceTurnDiagnostics,
+    _await_voice_response,
+    _voice_events,
+    build_parser,
+)
 from friday.ui.terminal import TerminalCommands
 
 
@@ -126,5 +131,37 @@ def test_event_consumer_notifies_completion():
         manager._emit(VoiceEvent(EventKind.ERROR, text="mock failure"))
         assert await asyncio.wait_for(receiver, 1) is False
         await manager.close()
+
+    asyncio.run(scenario())
+
+
+def test_early_completion_survives_until_waiter_and_counts_events():
+    async def scenario():
+        manager = SessionManager(FakeVoiceProvider())
+        await manager.start()
+        finished = asyncio.Event()
+        diagnostics = VoiceTurnDiagnostics()
+        speaker = RecordingSpeaker()
+        receiver = asyncio.create_task(_voice_events(manager, speaker, finished, diagnostics))
+        commands = TerminalCommands()
+        # Simulate a completion arriving before the Enter that stops recording.
+        manager._emit(VoiceEvent(EventKind.TRANSCRIPT, text="hello", speaker="user"))
+        manager._emit(VoiceEvent(EventKind.AUDIO, audio=b"\x00\x00", sample_rate=24000))
+        manager._emit(VoiceEvent(EventKind.TURN_COMPLETE))
+        await asyncio.wait_for(finished.wait(), timeout=1)
+        try:
+            assert await _await_voice_response(
+                commands, receiver, finished, speaker, timeout=0.1
+            ) == "ready"
+            assert diagnostics.user_transcript_chunks == 1
+            assert diagnostics.assistant_audio_bytes == 2
+            assert diagnostics.completions == 1
+            assert diagnostics.interruptions == 0
+            diagnostics.reset()
+            assert diagnostics.completions == 0
+        finally:
+            receiver.cancel()
+            await asyncio.gather(receiver, return_exceptions=True)
+            await manager.close()
 
     asyncio.run(scenario())

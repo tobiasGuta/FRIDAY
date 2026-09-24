@@ -6,6 +6,7 @@ from typing import Any
 
 from friday.config import Settings
 from friday.core.events import EventKind, VoiceEvent
+from friday.core.provider import ProviderCapabilityError
 
 FRIDAY_INSTRUCTION = (
     "You are FRIDAY, Tobias's personal AI assistant. Speak naturally and concisely. "
@@ -51,8 +52,10 @@ def normalize_gemini_message(
 class GeminiLiveProvider:
     """Direct audio-to-audio provider; no microphone or speaker ownership."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, manual_activity: bool = False) -> None:
         self.settings = settings
+        self._manual_activity = manual_activity
+        self._activity_open = False
         self._client: Any = None
         self._context: Any = None
         self._session: Any = None
@@ -79,6 +82,17 @@ class GeminiLiveProvider:
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
+            **(
+                {
+                    "realtime_input_config": types.RealtimeInputConfig(
+                        automatic_activity_detection=types.AutomaticActivityDetection(
+                            disabled=True
+                        )
+                    )
+                }
+                if self._manual_activity
+                else {}
+            ),
         )
         self._context = self._client.aio.live.connect(model=self.settings.model, config=config)
         try:
@@ -99,6 +113,8 @@ class GeminiLiveProvider:
         await self._require_session().send_realtime_input(text=text)
 
     async def send_audio(self, pcm: bytes) -> None:
+        if self._manual_activity and not self._activity_open:
+            raise ProviderCapabilityError("Cannot send audio outside a manual voice turn")
         from google.genai import types
 
         await self._require_session().send_realtime_input(
@@ -108,7 +124,25 @@ class GeminiLiveProvider:
         )
 
     async def end_input(self) -> None:
+        if self._manual_activity:
+            raise ProviderCapabilityError("Manual voice turns must use end_activity")
         await self._require_session().send_realtime_input(audio_stream_end=True)
+
+    async def start_activity(self) -> None:
+        if not self._manual_activity or self._activity_open:
+            raise ProviderCapabilityError("Manual activity start unavailable or already active")
+        from google.genai import types
+
+        await self._require_session().send_realtime_input(activity_start=types.ActivityStart())
+        self._activity_open = True
+
+    async def end_activity(self) -> None:
+        if not self._manual_activity or not self._activity_open:
+            raise ProviderCapabilityError("No manual voice activity is active")
+        from google.genai import types
+
+        await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
+        self._activity_open = False
 
     async def events(self) -> abc.AsyncIterator[VoiceEvent]:
         session = self._require_session()

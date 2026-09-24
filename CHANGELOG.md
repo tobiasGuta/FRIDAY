@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2 — Manual voice-turn boundaries
+
+- Disable automatic VAD only for `talk`, with explicit activity start/end signals.
+- Drain queued microphone frames before ending activity; never mix audio stream end into manual mode.
+- Preserve turn completion emitted before microphone stop; reset only at the next turn start.
+- Add per-turn counts to timeout output without logging keys or raw audio.
+- Extend mock SDK and offline voice regression coverage.
+
+
 ## 0.2.1 — Voice-turn reliability (2026-09-23)
 
 - Wait for model turn completion and local speaker-buffer drain before starting another recording.

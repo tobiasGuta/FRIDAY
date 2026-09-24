@@ -2,11 +2,14 @@
 
 import asyncio
 import sys
+
+import pytest
 from types import ModuleType
 from types import SimpleNamespace as Obj
 
 from friday.config import Settings
 from friday.core.events import EventKind
+from friday.core.provider import ProviderCapabilityError
 from friday.providers.gemini_live import GeminiLiveProvider
 
 
@@ -81,7 +84,8 @@ def test_adapter_connect_send_receive_and_close(monkeypatch):
     types = ModuleType("google.genai.types")
     for name in (
         "LiveConnectConfig", "SpeechConfig", "VoiceConfig", "PrebuiltVoiceConfig",
-        "AudioTranscriptionConfig", "Blob"
+        "AudioTranscriptionConfig", "Blob", "RealtimeInputConfig",
+        "AutomaticActivityDetection", "ActivityStart", "ActivityEnd"
     ):
         setattr(types, name, lambda **kwargs: Obj(**kwargs))
     types.Modality = Obj(AUDIO="AUDIO")
@@ -114,5 +118,26 @@ def test_adapter_connect_send_receive_and_close(monkeypatch):
         await adapter.close()
         await adapter.close()
         assert client.context.exited and client.closed and client.async_closed
+        manual = GeminiLiveProvider(settings, manual_activity=True)
+        await manual.connect()
+        manual_client = client_holder["client"]
+        assert manual_client.config.realtime_input_config.automatic_activity_detection.disabled
+        assert not hasattr(client.config, "realtime_input_config")
+        with pytest.raises(ProviderCapabilityError, match="outside a manual"):
+            await manual.send_audio(b"\x02\x00")
+        await manual.start_activity()
+        with pytest.raises(ProviderCapabilityError, match="already active"):
+            await manual.start_activity()
+        await manual.send_audio(b"\x02\x00")
+        await manual.end_activity()
+        with pytest.raises(ProviderCapabilityError, match="No manual voice"):
+            await manual.end_activity()
+        with pytest.raises(ProviderCapabilityError, match="end_activity"):
+            await manual.end_input()
+        assert [list(item) for item in manual_client.session.sent] == [
+            ["activity_start"], ["audio"], ["activity_end"]
+        ]
+        assert manual_client.session.sent[1]["audio"].data == b"\x02\x00"
+        await manual.close()
 
     asyncio.run(scenario())
