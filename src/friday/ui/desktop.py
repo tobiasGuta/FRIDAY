@@ -620,6 +620,10 @@ class DesktopWindow(QMainWindow):
         except BrightspaceError as exc:
             self.academic_status.setText(str(exc))
             return
+        self._academic_synced_session = False
+        self.academic_auto_option.setChecked(False)
+        self.academic_voice_option.setChecked(False)
+        self._display_academic_cached()
         self.academic_status.setText(
             "Brightspace feed saved in protected storage. Click Sync now."
         )
