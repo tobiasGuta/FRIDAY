@@ -313,3 +313,29 @@ def test_session_expiry_warns_and_requires_new_explicit_connection():
         assert events[-1] == ("status", "Disconnected")
 
     asyncio.run(scenario())
+
+
+def test_failure_discards_pending_draft_without_writing_sqlite(tmp_path):
+    async def scenario():
+        store = ScheduleStore(tmp_path / "recovery-draft.sqlite3")
+        approval = VoiceReminderApproval(store)
+        due = (datetime.now().astimezone() + timedelta(days=2)).isoformat()
+        assert approval.propose(
+            DraftReminderArguments(text="Do not save on reconnect", at=due)
+        )["status"] == "ok"
+        provider = FakeAudioProvider()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), FakeMicrophone(), FakeSpeaker(),
+            approval=approval, emit=lambda k, v: events.append((k, v)), max_seconds=30,
+        )
+        task = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        await provider.events_queue.put(VoiceEvent(EventKind.ERROR, text="stream lost"))
+        await asyncio.wait_for(task, 2)
+        assert approval.pending() is None
+        assert store.list_items() == []
+        assert ("draft", None) in events
+        assert ("recovery", "connection") in events
+
+    asyncio.run(scenario())
