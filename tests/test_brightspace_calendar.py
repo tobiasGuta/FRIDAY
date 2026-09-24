@@ -1,6 +1,6 @@
 """Offline Brightspace fixtures: never require a personal feed or API credentials."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -123,7 +123,7 @@ def test_snapshot_atomic_dedup_and_failed_update_preserves_previous(tmp_path):
     with pytest.raises(BrightspaceError):
         store.replace(())
     assert store.snapshot().items == previous.items
-    upcoming = store.upcoming(now=datetime(2026, 10, 5, 10, tzinfo=timezone.utc))
+    upcoming = store.upcoming(now=datetime(2026, 10, 5, 10, tzinfo=UTC))
     assert {x.uid for x in upcoming.items} == {"class-1", "task-1", "holiday-1"}
 
 
