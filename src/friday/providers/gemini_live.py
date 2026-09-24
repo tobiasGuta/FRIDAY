@@ -7,7 +7,6 @@ from typing import Any
 from friday.config import Settings
 from friday.core.events import EventKind, VoiceEvent
 
-
 FRIDAY_INSTRUCTION = (
     "You are FRIDAY, Tobias's personal AI assistant. Speak naturally and concisely. "
     "You can converse but cannot yet control the computer, retain long-term memories, "
