@@ -31,6 +31,17 @@ class VoiceTurns:
         self.sent_frames = 0
         self.sent_bytes = 0
 
+    @property
+    def sender_task(self) -> asyncio.Task[None] | None:
+        """Observe capture failures immediately, not only after Stop is clicked."""
+        return self._sender
+
+    def check_microphone(self) -> None:
+        """Use the optional hardware health probe without changing fake providers."""
+        check = getattr(self.microphone, "check_health", None)
+        if self.recording and check is not None:
+            check()
+
     async def start(self) -> None:
         if self.recording:
             raise RuntimeError("Already recording")
