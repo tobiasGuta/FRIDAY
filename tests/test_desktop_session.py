@@ -210,7 +210,9 @@ def test_provider_failure_stops_voice_without_auto_reconnect():
         )
         task = asyncio.create_task(controller.run())
         await _wait_for(events, "status", "Ready")
-        await provider.events_queue.put(VoiceEvent(EventKind.ERROR, text="Provider event stream ended"))
+        await provider.events_queue.put(
+            VoiceEvent(EventKind.ERROR, text="Provider event stream ended")
+        )
         await asyncio.wait_for(task, 2)
         assert provider.closed and speaker.closed and not mic.recording
         assert ("recovery", "connection") in events
