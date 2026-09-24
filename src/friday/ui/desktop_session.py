@@ -258,6 +258,8 @@ class DesktopVoiceSession:
                                     else self.approval.reject()
                                 )
                         if sender is not None and sender in done and self.turns.recording:
+                            if sender.cancelled():
+                                raise AudioDeviceError("Microphone capture stopped unexpectedly")
                             # Raises the original SessionError if sending failed.
                             sender.result()
                             raise AudioDeviceError("Microphone capture ended unexpectedly")
