@@ -346,7 +346,8 @@ def sync_calendar(store: CalendarStore, service: Any) -> tuple[int, int]:
                 ) from get_exc
         if not isinstance(result, dict) or result.get("id") != body["id"]:
             raise CalendarSyncError("Google returned an unexpected event identifier.")
-        private = result.get("extendedProperties", {}).get("private", {})
+        properties = result.get("extendedProperties")
+        private = properties.get("private") if isinstance(properties, dict) else None
         if not isinstance(private, dict) or private.get("fridayScheduleId") != item.id:
             raise CalendarSyncError(
                 "An existing event did not match FRIDAY's reminder; link was not saved."
