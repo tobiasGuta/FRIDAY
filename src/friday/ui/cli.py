@@ -453,7 +453,9 @@ def _schedule_cli(args: argparse.Namespace) -> int:
             if not calendar.calendar_id():
                 raise CalendarSyncError("Initialize the FRIDAY calendar before enabling sync.")
             service = google_service()
-            callback = lambda: sync_calendar(calendar, service)
+
+            def callback() -> tuple[int, int]:
+                return sync_calendar(calendar, service)
         try:
             run_worker(store, calendar_sync=callback)
         except KeyboardInterrupt:
