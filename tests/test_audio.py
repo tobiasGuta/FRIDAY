@@ -216,7 +216,7 @@ def test_microphone_reports_inactive_device_but_not_transient_overflow():
         stream = sd.input_stream
         stream.active = True
         mic.check_health()
-        stream.kwargs["callback"](b"\\x00\\x00", 1, None, "input overflow")
+        stream.kwargs["callback"](bytes([0, 0]), 1, None, "input overflow")
         await asyncio.sleep(0)
         assert mic.status_events == 1
         mic.check_health()  # Overflow is not by itself a disconnect.
