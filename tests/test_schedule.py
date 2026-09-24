@@ -220,7 +220,7 @@ def test_gui_worker_stop_event_preserves_due_reminders_and_releases_lease(tmp_pa
     from friday.schedule import run_worker
 
     store = ScheduleStore(tmp_path / "stop.sqlite3")
-    item = store.timer(1, "Keep this", now=1000)
+    store.timer(1, "Keep this", now=1000)
     stop = threading.Event()
     stop.set()
     delivered = []
