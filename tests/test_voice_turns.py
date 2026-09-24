@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+from friday.audio import turns as voice_turns
+from friday.audio.devices import AudioDeviceError
 from friday.audio.turns import VoiceTurns
 from friday.core.session import SessionManager
 from friday.providers.fake import FakeVoiceProvider
@@ -121,6 +123,36 @@ def test_start_failure_closes_microphone_without_sending_audio():
                 await turns.start()
             assert not mic.active
             assert turns._sender is None
+        finally:
+            await turns.close()
+            await manager.close()
+
+    asyncio.run(scenario())
+
+
+def test_stalled_audio_sender_is_bounded_and_never_sends_successful_end(monkeypatch):
+    class StuckProvider(RecordingProvider):
+        async def send_audio(self, pcm):
+            await asyncio.Event().wait()
+
+    async def scenario():
+        monkeypatch.setattr(voice_turns, "SEND_DRAIN_TIMEOUT_SECONDS", 0.03)
+        provider = StuckProvider()
+        manager = SessionManager(provider)
+        await manager.start()
+        mic = FakeMicrophone()
+        turns = VoiceTurns(manager, mic, FakeSpeaker())
+        try:
+            await turns.start()
+            await mic.queue.put(bytes([1, 0]))
+            # The sender should have entered the provider before Stop drains.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            with pytest.raises(AudioDeviceError, match="stalled"):
+                await turns.stop()
+            assert ("end", None) not in provider.actions
+            assert not mic.active
+            assert not turns.recording
         finally:
             await turns.close()
             await manager.close()
