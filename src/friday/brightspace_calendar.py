@@ -9,6 +9,7 @@ Recurring series are flagged but not expanded; do not claim a complete schedule.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -168,7 +169,7 @@ class AcademicStore:
             raise BrightspaceError("Refusing an empty or oversized calendar update.")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with sqlite3.connect(self.path, timeout=5) as db:
+            with closing(sqlite3.connect(self.path, timeout=5)) as db, db:
                 db.execute(
                     "CREATE TABLE IF NOT EXISTS academic_items ("
                     "uid TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, "
@@ -200,7 +201,7 @@ class AcademicStore:
         if not self.path.is_file():
             return AcademicSnapshot((), None)
         try:
-            with sqlite3.connect(self.path, timeout=5) as db:
+            with closing(sqlite3.connect(self.path, timeout=5)) as db:
                 rows = db.execute(
                     "SELECT uid, title, kind, when_iso, all_day, explicit_due, recurring "
                     "FROM academic_items"
