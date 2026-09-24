@@ -29,6 +29,7 @@ def test_approval_controls_reflect_app_owned_draft_and_result():
     app = QApplication.instance() or QApplication([])
     window = DesktopWindow()
     try:
+        assert app is not None
         window._on_event("status", "Ready")
         assert window.mic_button.isEnabled()
         window._on_event("draft", {
@@ -56,6 +57,7 @@ def test_transcript_displays_untrusted_text_as_plain_text():
     app = QApplication.instance() or QApplication([])
     window = DesktopWindow()
     try:
+        assert app is not None
         sample = '<img src="file:///private/path">'
         window._on_event("transcript", {"speaker": "user", "text": sample})
         assert sample in window.transcript.toPlainText()
