@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.5.1 adds a Windows desktop shortcut, system tray lifecycle, and read-only calendar worker health to the v0.5.0 PySide6 voice interface.**
+A harness-first personal AI assistant. **v0.5.2 adds an explicitly controlled in-app scheduler with tray alerts, so a separate PowerShell window is no longer required while FRIDAY is running.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.5.1)
+## What works today (v0.5.2)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -44,7 +44,7 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
-## FRIDAY desktop interface (v0.5.1)
+## FRIDAY desktop interface (v0.5.2)
 
 The optional PySide6 shell provides click-to-talk, an animated voice orb, plain-text
 transcripts, an upcoming-reminders list and app-owned **Confirm / Cancel** controls.
@@ -93,28 +93,48 @@ the previous graceful disconnect/exit behavior. Disconnect still closes the
 voice session while leaving the application window available. There is no
 always-on microphone or wake word.
 
-### Calendar and iPhone visibility
+### Desktop scheduler (v0.5.2)
 
-The desktop displays read-only worker health: **not running**, **local-only**
-(worker running without sync), **sync mode unknown** (older worker), **waiting**,
-**syncing**, **sync OK**, or **sync failed**. For success/failure it shows the
-most recent successful local sync time when available. The tray tooltip also
-shows the status. **Sync OK means the Google API sync call returned successfully;
-it does not prove iPhone refresh or push notification delivery.**
+You can now run the existing scheduler **inside FRIDAY, without a separate
+PowerShell window**. Open FRIDAY and click **Start scheduler**. This does not
+connect the microphone or Gemini Live. Local reminders and timers use Windows
+tray notifications. To publish reminders to your iPhone's Google Calendar,
+explicitly check **Sync Google Calendar (iPhone view)** *before* starting.
 
-Start the existing independent scheduler from a separate PowerShell window:
+The calendar checkbox is off by default. If you select it, use your previously
+configured dedicated FRIDAY calendar and saved OAuth; the desktop never opens
+a Google sign-in browser by itself. If authorization is missing or expired,
+the worker stops and shows a safe setup message. The foreground CLI can still
+be used for one-time setup or diagnostics.
+
+Closing the window to the tray **keeps the scheduler running**, even if the
+voice session is disconnected. **Quit FRIDAY** stops its owned scheduler and
+releases the SQLite lease. The scheduler is *not* a persistent Windows service:
+new reminders will not be delivered or synced while the entire app is exited,
+unless you run the separate CLI worker. There is no automatic startup on login.
+
+Do not run two workers. When an existing terminal worker owns the database,
+the desktop shows **Worker running externally** and disables Start; Stop can
+only control the worker launched from that desktop instance. Stop does not
+delete pending reminders or modify your Google Calendar authorization.
+
+Local alerts are best-effort OS tray notifications and can be suppressed by
+Windows notification settings or Do Not Disturb. The worker waits for the
+desktop to attempt a notification before acknowledging an item; if the tray
+is unavailable it retains the existing bounded retry/failure behavior rather
+than silently discarding a console alert. For a platform without a functioning
+system tray, use the existing foreground worker:
 
 ```powershell
 python -m friday schedule worker --calendar-sync
 ```
 
-The worker attempts sync at startup and every 60 seconds. FRIDAY displays its
-health while that process is running, but does **not** start it, perform Google
-OAuth, or create a second scheduler. SQLite remains authoritative for local
-reminders. Do not run two workers on the same database. Older workers cannot
-report calendar outcomes until restarted using v0.5.1. If this desktop window
-is closed to the tray, the separate scheduler still needs its own running
-process for local alerts and new phone synchronization.
+The desktop shows **not running**, **local-only**, **waiting**, **syncing**,
+**sync OK**, or **sync failed**, with the last successful sync time when known.
+Sync OK means the Google Calendar API completed; it does *not* guarantee an
+iPhone refresh or push notification. SQLite remains authoritative for local
+reminders. The normal CLI worker still checks due jobs every second and
+attempts Google sync at startup and every 60 seconds.
 
 Unapproved drafts are discarded on voice-session shutdown. The app saves no raw
 audio or persistent conversation transcript.

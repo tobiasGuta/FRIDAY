@@ -37,6 +37,7 @@ from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
 from friday.providers.gemini_live import GeminiLiveProvider
 from friday.schedule import ScheduleStore, WorkerHealth, read_worker_health
+from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.voice_reminders import VoiceReminderApproval
 
@@ -278,6 +279,9 @@ class DesktopWindow(QMainWindow):
         self._input_language = input_language
         self._max_seconds = max_seconds
         self._worker: DesktopThread | None = None
+        self._scheduler: SchedulerThread | None = None
+        self._scheduler_stop_requested = False
+        self._scheduler_had_error = False
         self._closing = False
         self._quitting = False
         self._tray: QSystemTrayIcon | None = None
@@ -414,12 +418,26 @@ class DesktopWindow(QMainWindow):
         content.addLayout(sidebar, 6)
         outer.addLayout(content, 1)
 
+        scheduler_controls = QHBoxLayout()
         self.calendar_status = QLabel("Calendar: checking worker…")
         self.calendar_status.setObjectName("detail")
-        outer.addWidget(self.calendar_status)
+        scheduler_controls.addWidget(self.calendar_status, 1)
+        self.scheduler_button = QPushButton("Start scheduler")
+        self.scheduler_button.clicked.connect(self._start_or_stop_scheduler)
+        scheduler_controls.addWidget(self.scheduler_button)
+        outer.addLayout(scheduler_controls)
+        self.scheduler_sync_option = QCheckBox("Sync Google Calendar (iPhone view)")
+        self.scheduler_sync_option.setChecked(False)  # Explicit opt-in, as in the CLI.
+        outer.addWidget(self.scheduler_sync_option)
+        self.scheduler_notice = QLabel(
+            "The desktop scheduler runs while FRIDAY is open or hidden in the tray."
+        )
+        self.scheduler_notice.setObjectName("subheading")
+        self.scheduler_notice.setWordWrap(True)
+        outer.addWidget(self.scheduler_notice)
         footer = QLabel(
             "Click-to-talk · No wake word or persistent conversation memory · "
-            "Calendar status is read-only; start the separate scheduler for phone sync."
+            "Quitting FRIDAY stops its desktop-managed scheduler."
         )
         footer.setObjectName("subheading")
         footer.setWordWrap(True)
@@ -467,26 +485,131 @@ class DesktopWindow(QMainWindow):
             return
         self._quitting = True
         self._health_timer.stop()
+        if self._scheduler is not None:
+            self._scheduler.request_stop()
+            self._scheduler_stop_requested = True
         if self._worker is not None:
             self._worker.request("quit")
             self._set_state("Disconnecting")
-            return
         self._finish_quit()
 
     def _finish_quit(self) -> None:
+        if self._worker is not None or self._scheduler is not None:
+            return
+        self._health_timer.stop()
         if self._tray is not None:
             self._tray.hide()
         app = QApplication.instance()
         if app is not None:
             app.quit()
 
+    def _tray_notifications_available(self) -> bool:
+        return (
+            self._tray is not None and self._tray.isVisible()
+            and QSystemTrayIcon.supportsMessages()
+        )
+
     def _refresh_worker_status(self) -> None:
         try:
-            label = _calendar_label(read_worker_health())
+            health = read_worker_health()
+            label = _calendar_label(health)
         except (OSError, sqlite3.Error):
+            health = None
             label = "Calendar: status unavailable"
+        if self._scheduler is not None:
+            if self._scheduler_stop_requested:
+                label = "Calendar: stopping desktop scheduler…"
+            elif health is not None and not health.running:
+                label = "Calendar: starting desktop scheduler…"
+            self.scheduler_button.setText("Stop scheduler")
+            self.scheduler_button.setEnabled(
+                not self._scheduler_stop_requested and not self._quitting
+            )
+            self.scheduler_sync_option.setEnabled(False)
+        elif health is None:
+            self.scheduler_button.setText("Scheduler status unavailable")
+            self.scheduler_button.setEnabled(False)
+            self.scheduler_sync_option.setEnabled(False)
+        elif health.running:
+            self.scheduler_button.setText("Worker running externally")
+            self.scheduler_button.setEnabled(False)
+            self.scheduler_sync_option.setEnabled(False)
+        else:
+            self.scheduler_button.setText("Start scheduler")
+            available = self._tray_notifications_available()
+            self.scheduler_button.setEnabled(
+                available and not self._quitting and not self._closing
+            )
+            self.scheduler_sync_option.setEnabled(
+                available and not self._quitting and not self._closing
+            )
+            if not available and not self._quitting:
+                self.scheduler_notice.setText(
+                    "System tray notifications are needed for a desktop scheduler. "
+                    "Use the existing foreground CLI worker on this platform."
+                )
         self.calendar_status.setText(label)
         self._update_tray_tooltip()
+
+    def _start_or_stop_scheduler(self) -> None:
+        if self._scheduler is not None:
+            self._scheduler_stop_requested = True
+            self._scheduler.request_stop()
+            self._refresh_worker_status()
+            return
+        if self._quitting or self._closing:
+            return
+        try:
+            if read_worker_health().running:
+                self._refresh_worker_status()
+                return
+        except (OSError, sqlite3.Error):
+            self._refresh_worker_status()
+            return
+        if not self._tray_notifications_available():
+            self._refresh_worker_status()
+            return
+        thread = SchedulerThread(calendar_enabled=self.scheduler_sync_option.isChecked())
+        thread.alert.connect(self._show_scheduler_alert)
+        thread.notice.connect(self._scheduler_notice_received)
+        thread.finished.connect(self._scheduler_finished)
+        self._scheduler = thread
+        self._scheduler_had_error = False
+        self.scheduler_notice.setText(
+            "Scheduler running in FRIDAY. Hide the window to keep it active."
+        )
+        self._refresh_worker_status()
+        thread.start()
+
+    def _show_scheduler_alert(self, alert: AlertRequest) -> None:
+        try:
+            if self._tray_notifications_available():
+                title = "FRIDAY reminder" if alert.kind == "reminder" else "FRIDAY timer"
+                self._tray.showMessage(
+                    title, alert.text, QSystemTrayIcon.MessageIcon.Information, 10000
+                )
+                alert.attempted = True
+        finally:
+            alert.done.set()
+
+    def _scheduler_notice_received(self, message: str) -> None:
+        self._scheduler_had_error = True
+        self.scheduler_notice.setText(message)
+
+    def _scheduler_finished(self) -> None:
+        if self._scheduler is not None:
+            self._scheduler.deleteLater()
+            self._scheduler = None
+        self._scheduler_stop_requested = False
+        if not self._scheduler_had_error:
+            self.scheduler_notice.setText(
+                "Scheduler stopped. Reminders require a running worker to be delivered."
+            )
+        self._refresh_worker_status()
+        if self._quitting:
+            self._finish_quit()
+        elif self._closing and self._worker is None:
+            self.close()
 
     def _append(self, label: str, text: str) -> None:
         if text:
@@ -622,7 +745,7 @@ class DesktopWindow(QMainWindow):
         self._set_state("Disconnected")
         if self._quitting:
             self._finish_quit()
-        elif self._closing:
+        elif self._closing and self._scheduler is None:
             self.close()
 
     def closeEvent(self, event: Any) -> None:
@@ -630,10 +753,14 @@ class DesktopWindow(QMainWindow):
             self.hide()
             event.ignore()
             return
-        if self._worker is not None:
+        if self._worker is not None or self._scheduler is not None:
             self._closing = True
-            self._worker.request("quit")
-            self._set_state("Disconnecting")
+            if self._worker is not None:
+                self._worker.request("quit")
+                self._set_state("Disconnecting")
+            if self._scheduler is not None:
+                self._scheduler_stop_requested = True
+                self._scheduler.request_stop()
             event.ignore()
             return
         self._health_timer.stop()

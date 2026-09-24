@@ -211,3 +211,58 @@ def test_cli_edit_preserves_id_and_rejects_missing_values(tmp_path, capsys):
     assert store.get_pending_reminder(first.id).text == "Study security"
     assert main([*root, "edit", first.id]) == 1
     assert store.get_pending_reminder(first.id).revision == 1
+
+
+def test_gui_worker_stop_event_preserves_due_reminders_and_releases_lease(tmp_path, capsys):
+    """A stop request must not silently deliver to a discarded console."""
+    import threading
+
+    from friday.schedule import run_worker
+
+    store = ScheduleStore(tmp_path / "stop.sqlite3")
+    store.timer(1, "Keep this", now=1000)
+    stop = threading.Event()
+    stop.set()
+    delivered = []
+    run_worker(
+        store, notify=lambda schedule: delivered.append(schedule.id),
+        stop_event=stop, foreground=False,
+    )
+    assert delivered == []
+    assert store.list_items(include_history=True)[0].status == "pending"
+    assert not store.worker_health().running
+    assert "scheduler running" not in capsys.readouterr().out.lower()
+
+
+def test_gui_worker_can_stop_without_terminating_process(tmp_path):
+    import threading
+    import time
+
+    from friday.schedule import run_worker
+
+    store = ScheduleStore(tmp_path / "threaded.sqlite3")
+    stop = threading.Event()
+    errors = []
+
+    def serve():
+        try:
+            run_worker(
+                store, notify=lambda _: None, stop_event=stop, foreground=False,
+            )
+        except Exception as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=serve)
+    thread.start()
+    try:
+        until = time.monotonic() + 3
+        while not store.worker_health().running and time.monotonic() < until:
+            time.sleep(0.01)
+        assert store.worker_health().running
+        assert not store.acquire_owner("duplicate")
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert errors == []
+    assert not store.worker_health().running

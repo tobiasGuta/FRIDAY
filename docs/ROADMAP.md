@@ -88,6 +88,20 @@
 - Offline coverage added; Windows desktop shortcut, tray, and real iPhone
   synchronization acceptance remain to be confirmed.
 
+## v0.5.2 — Desktop-managed scheduler
+
+- Add explicit Start/Stop controls for an owned scheduler in a separate Qt thread,
+  independent of the voice session and without a separate PowerShell window.
+- Preserve one SQLite worker lease; an existing terminal worker is observed but
+  cannot be stopped by the desktop.
+- Use system tray alerts for local reminders and timers, with acknowledgement
+  only after an attempted tray notification. Windows notification delivery remains
+  best-effort and requires acceptance testing.
+- Calendar sync is independently opt-in and uses existing Google authorization.
+  Hiding the window retains the worker; quitting FRIDAY stops its owned worker.
+- No Windows service or auto-start at login; a separate CLI worker remains
+  available when FRIDAY is fully exited. Real Windows acceptance pending.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

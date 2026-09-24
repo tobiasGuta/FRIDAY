@@ -7,7 +7,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from friday.schedule import WorkerHealth
+from friday.ui import desktop
 from friday.ui.desktop import DesktopWindow, _calendar_label
+from friday.ui.desktop_scheduler import AlertRequest
 
 
 def test_desktop_starts_offline_with_microphone_disabled():
@@ -127,5 +129,144 @@ def test_tray_close_hides_without_disconnecting():
         window._open_window()
         assert window.isVisible()
     finally:
+        window._tray = None
+        window.close()
+
+
+def test_scheduler_controls_do_not_autostart_and_respect_external_owner(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        assert window._scheduler is None
+        assert not window.scheduler_button.isEnabled()  # Headless: no tray notification.
+        monkeypatch.setattr(window, "_tray_notifications_available", lambda: True)
+        monkeypatch.setattr(
+            desktop, "read_worker_health",
+            lambda: WorkerHealth(True, True, "ok", last_success=1000),
+        )
+        window._refresh_worker_status()
+        assert window.scheduler_button.text() == "Worker running externally"
+        assert not window.scheduler_button.isEnabled()
+        assert not window.scheduler_sync_option.isEnabled()
+        window._start_or_stop_scheduler()
+        assert window._scheduler is None
+    finally:
+        window.close()
+
+
+def test_scheduler_controls_start_and_stop_only_owned_thread(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+
+    class TestSignal:
+        def __init__(self):
+            self.listeners = []
+
+        def connect(self, listener):
+            self.listeners.append(listener)
+
+    class FakeThread:
+        def __init__(self, *, calendar_enabled):
+            self.calendar_enabled = calendar_enabled
+            self.alert = TestSignal()
+            self.notice = TestSignal()
+            self.finished = TestSignal()
+            self.started = False
+            self.stopped = False
+            self.deleted = False
+
+        def start(self):
+            self.started = True
+
+        def request_stop(self):
+            self.stopped = True
+
+        def deleteLater(self):
+            self.deleted = True
+
+    monkeypatch.setattr(desktop, "SchedulerThread", FakeThread)
+    monkeypatch.setattr(
+        desktop, "read_worker_health",
+        lambda: WorkerHealth(False, False, "stopped"),
+    )
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        monkeypatch.setattr(window, "_tray_notifications_available", lambda: True)
+        window._refresh_worker_status()
+        assert window.scheduler_button.isEnabled()
+        window.scheduler_sync_option.setChecked(True)
+        window._start_or_stop_scheduler()
+        thread = window._scheduler
+        assert thread.started and thread.calendar_enabled
+        assert window.scheduler_button.text() == "Stop scheduler"
+        assert not window.scheduler_sync_option.isEnabled()
+        window._start_or_stop_scheduler()
+        assert thread.stopped and window._scheduler_stop_requested
+        assert not window.scheduler_button.isEnabled()
+        window._scheduler_finished()
+        assert thread.deleted
+        assert window._scheduler is None
+    finally:
+        window.close()
+
+
+def test_unavailable_tray_does_not_silently_acknowledge_alert():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        alert = AlertRequest("reminder", "Study")
+        window._show_scheduler_alert(alert)
+        assert alert.done.is_set()
+        assert not alert.attempted
+    finally:
+        window.close()
+
+
+def test_hidden_desktop_keeps_owned_scheduler_alive(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+
+    class FakeTray:
+        def __init__(self):
+            self.visible = True
+
+        def isVisible(self):
+            return self.visible
+
+        def hide(self):
+            self.visible = False
+
+        def setToolTip(self, _value):
+            pass
+
+        def showMessage(self, *_args):
+            pass
+
+    class FakeScheduler:
+        def __init__(self):
+            self.stopped = False
+
+        def request_stop(self):
+            self.stopped = True
+
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._tray = FakeTray()
+        monkeypatch.setattr(window, "_tray_notifications_available", lambda: True)
+        fake = FakeScheduler()
+        window._scheduler = fake
+        window.show()
+        window.close()
+        assert not window.isVisible()
+        assert not fake.stopped
+        alert = AlertRequest("reminder", "Study")
+        window._show_scheduler_alert(alert)
+        assert alert.attempted and alert.done.is_set()
+        window._open_window()
+        assert window.isVisible()
+    finally:
+        window._scheduler = None
         window._tray = None
         window.close()
