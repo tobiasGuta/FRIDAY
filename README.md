@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.3.5 fixes the delegated search function declaration for Gemini Live setup.**
+A harness-first personal AI assistant. **v0.3.6 makes delegated search fail clearly and stop further lookups after a rate-limit response.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.3.5)
+## What works today (v0.3.6)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -93,7 +93,7 @@ If the sounddevice/PortAudio backend cannot open a device, FRIDAY reports a loca
 
 **Validation boundary:** Offline automated tests cover fake audio device callbacks, PCM framing, buffer limits, two-turn delivery, interruption flush, and cleanup. They do not prove that an individual Windows microphone, sound driver, or Gemini account works; test with real hardware and your own key. The `talk` command uses API quota. No local raw recordings are persisted by default.
 
-### Opt-in grounded web search (v0.3.5)
+### Opt-in grounded web search (v0.3.6)
 
 Search is **off by default**. To enable it for one voice session:
 
@@ -131,6 +131,17 @@ A passing `web-check` verifies the Live function setup only, **not** that
 the separate grounded text request or resulting speech works. The full acceptance
 test is `talk --web` with a real question. The usual `talk` command
 and the exact `FRIDAY [Enter: talk/stop, /quit]:` prompt are unchanged.
+
+### Rate-limit behavior
+
+A working voice connection does not imply the separate text search has available
+quota. If that request receives HTTP 429, FRIDAY reports a search-rate-limit notice,
+does not fabricate a source, and sends **no further web requests for the rest of
+that voice session**. Exit and restart later only after checking the model's
+rate limit or billing status; restarting cannot itself increase quota. The
+grounded text request explicitly disables automatic Python function calling
+and SDK HTTP retries to avoid repeated requests against an exhausted limit.
+The normal no-search voice mode and the local clock are unaffected.
 
 ## Architecture
 

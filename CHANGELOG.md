@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.6 — Search quota handling and lint regression
+
+- Fix the Ruff E501 test line-length error from v0.3.5.
+- Explicitly disable automatic Python function calling for the separate
+  grounded text request, and limit SDK HTTP attempts to one.
+- On HTTP 429 return a distinct `search_rate_limited` error and block additional
+  search HTTP requests for the current voice session.
+- Show a human-readable quota/rate-limit notice rather than a generic rejected
+  tool message; instruct Live not to repeat the lookup in the same turn.
+- Redact provider exception details and retain the existing clock/voice prompt.
+- Add offline test proving repeated calls after 429 do not make more HTTP requests.
+- A successful real grounded answer still depends on available Gemini search quota.
+
+
 ## 0.3.5 — Live function declaration schema fix
 
 - Translate typed Pydantic tool argument models to a minimal Gemini Live

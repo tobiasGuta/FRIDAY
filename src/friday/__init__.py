@@ -1,3 +1,3 @@
 """FRIDAY's provider-independent assistant harness."""
 
-__version__ = "0.3.5"
+__version__ = "0.3.6"

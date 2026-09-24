@@ -191,7 +191,9 @@ def test_web_check_uses_no_microphone_or_prompt(monkeypatch, capsys):
     async def scenario():
         settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key")
         assert await _web_check(Obj(with_clock=False), settings) == 0
-        assert [d["name"] for d in clients[0].config.tools[0]["function_declarations"]] == ["search_web"]
+        assert [
+            d["name"] for d in clients[0].config.tools[0]["function_declarations"]
+        ] == ["search_web"]
         assert clients[0].config.realtime_input_config.automatic_activity_detection.disabled
         assert await _web_check(Obj(with_clock=True), settings) == 0
         assert [d["name"] for d in clients[1].config.tools[0]["function_declarations"]] == [
@@ -270,7 +272,10 @@ def test_separate_grounded_request_uses_text_model_and_actual_sources(monkeypatc
     genai = ModuleType("google.genai")
     genai.Client = Client
     types = ModuleType("google.genai.types")
-    for name in ("HttpOptions", "GenerateContentConfig", "Tool", "GoogleSearch"):
+    for name in (
+        "HttpOptions", "HttpRetryOptions", "GenerateContentConfig", "Tool", "GoogleSearch",
+        "AutomaticFunctionCallingConfig",
+    ):
         setattr(types, name, lambda **kwargs: Obj(**kwargs))
     genai.types = types
     google.genai = genai
@@ -284,6 +289,8 @@ def test_separate_grounded_request_uses_text_model_and_actual_sources(monkeypatc
     assert result["search_suggestions_html"] == "<p>Search</p>"
     assert calls[1][1]["model"] == "gemini-3.8-flash"
     assert calls[1][1]["config"].tools[0].google_search is not None
+    assert calls[0][1]["http_options"].retry_options.attempts == 1
+    assert calls[1][1]["config"].automatic_function_calling.disable is True
     assert calls[2] == ("close",)
     response.candidates = [Obj(grounding_metadata=None)]
     assert WebSearchService(settings).search("current Python release") == {
@@ -327,3 +334,48 @@ def test_search_tool_roundtrip_returns_grounding_without_html_or_premature_compl
             await adapter.close()
 
     asyncio.run(scenario())
+
+
+
+def test_http_429_returns_clear_error_and_blocks_further_api_calls(monkeypatch):
+    import sys
+    from types import ModuleType
+
+    class RateLimited(Exception):
+        code = 429
+
+    calls = []
+
+    class Client:
+        def __init__(self, **_kwargs):
+            calls.append("open")
+            self.models = Obj(generate_content=self.generate)
+
+        def generate(self, **_kwargs):
+            calls.append("request")
+            raise RateLimited("secret API details must not leak")
+
+        def close(self):
+            calls.append("close")
+
+    google = ModuleType("google")
+    google.__path__ = []
+    genai = ModuleType("google.genai")
+    genai.Client = Client
+    types = ModuleType("google.genai.types")
+    for name in (
+        "HttpOptions", "HttpRetryOptions", "GenerateContentConfig", "Tool", "GoogleSearch",
+        "AutomaticFunctionCallingConfig",
+    ):
+        setattr(types, name, lambda **kwargs: Obj(**kwargs))
+    genai.types = types
+    google.genai = genai
+    monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", types)
+    service = WebSearchService(Settings(_env_file=None, GEMINI_API_KEY="mock-key"))
+    error = {"status": "error", "error": "search_rate_limited"}
+    assert service.search("latest Python release") == error
+    assert service.search("latest other release") == error
+    assert calls == ["open", "request", "close"]
+    assert "secret" not in str(error)
