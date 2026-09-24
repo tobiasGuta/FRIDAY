@@ -326,3 +326,28 @@ def test_recovery_clear_on_explicit_new_connection(monkeypatch):
     finally:
         window._worker = None
         window.close()
+
+
+def test_voice_recovery_does_not_stop_separate_desktop_scheduler():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+
+    class OwnedScheduler:
+        def __init__(self):
+            self.stopped = False
+
+        def request_stop(self):
+            self.stopped = True
+
+    scheduler = OwnedScheduler()
+    try:
+        assert app is not None
+        window._scheduler = scheduler
+        window._on_event("recovery", "connection")
+        window._worker_finished()
+        assert window.status.text() == "Connection lost"
+        assert window._scheduler is scheduler
+        assert not scheduler.stopped
+    finally:
+        window._scheduler = None
+        window.close()
