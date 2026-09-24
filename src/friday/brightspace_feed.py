@@ -63,14 +63,22 @@ def _vault(vault=None):
         raise BrightspaceError("Protected system credential storage is unavailable.") from exc
 
 
-def save_feed(value: str, *, vault=None) -> None:
+def save_feed(value: str, *, vault=None, store: AcademicStore | None = None) -> None:
     url = validate_feed_url(value)
+    secure = _vault(vault)
     try:
-        _vault(vault).set_password(SERVICE, ACCOUNT, url)
-    except BrightspaceError:
-        raise
+        previous = secure.get_password(SERVICE, ACCOUNT)
+        secure.set_password(SERVICE, ACCOUNT, url)
     except Exception as exc:
         raise BrightspaceError("Unable to save the feed in protected credential storage.") from exc
+    if previous and previous != url:
+        # Never show another subscription's cached data under a newly saved feed.
+        try:
+            (store or AcademicStore()).path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise BrightspaceError(
+                "New credential saved, but the previous academic cache could not be erased."
+            ) from exc
 
 
 def load_feed(*, vault=None) -> str:
