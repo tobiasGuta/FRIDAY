@@ -41,7 +41,8 @@
 
 - v0.3.9 implements local, durable one-time schedule storage and an independent terminal-alert worker. Windows acceptance pending.
 - v0.4.0 adds explicit desktop OAuth, one-way synchronization to an app-created FRIDAY Google Calendar for iPhone visibility, cancellation propagation, and optional 60-second worker sync. Windows/Google acceptance pending.
-- Next: approved voice-created reminders and phone notification reliability, then recurrence and two-way editing.
+- v0.4.1 adds opt-in, one-at-a-time voice drafts and host-validated approval before local SQLite writes; Windows voice acceptance pending.
+- Next: phone notification reliability, then recurrence and two-way editing.
 
 ## v0.3.2–v0.3.7 — Web search (Tavily backend implemented; Windows accepted)
 

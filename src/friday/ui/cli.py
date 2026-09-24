@@ -33,6 +33,7 @@ from friday.tools.search_grounding import SearchPreview
 from friday.tools.weather import WeatherArguments, WeatherService
 from friday.tools.web_search import WebSearchService
 from friday.ui.terminal import TerminalCommands
+from friday.voice_reminders import VoiceReminderApproval
 
 
 def _display(event: VoiceEvent) -> None:
@@ -127,12 +128,29 @@ class VoiceTurnDiagnostics:
         self.interruptions = 0
 
 
+def _show_reminder_result(result: dict[str, str] | None) -> None:
+    if result is None:
+        return
+    if result.get("status") == "created":
+        print(
+            f"REMINDER CREATED [{result['id']}]: {result['text']} — {result['at']}. "
+            "The worker will sync it if --calendar-sync is running."
+        )
+    elif result.get("status") == "rejected":
+        print("REMINDER REJECTED. No schedule was created.")
+    elif result.get("error") == "no_pending_reminder":
+        print("No reminder proposal is pending.")
+    else:
+        print(f"REMINDER NOT SAVED: {result.get('error', 'unknown_error')}.")
+
+
 async def _voice_events(
     manager: SessionManager,
     speaker: Speaker,
     turn_finished: asyncio.Event | None = None,
     diagnostics: VoiceTurnDiagnostics | None = None,
     search_preview: SearchPreview | None = None,
+    reminder_approval: VoiceReminderApproval | None = None,
 ) -> bool:
     """Single consumer: play PCM, display supplied sources, and track turn state."""
     sources: dict[str, SearchSource] = {}
@@ -150,12 +168,17 @@ async def _voice_events(
             if event.search_suggestions_html:
                 suggestions = event.search_suggestions_html
         elif event.kind is EventKind.TRANSCRIPT:
-            if diagnostics is not None and event.speaker == "user":
-                diagnostics.user_transcript_chunks += 1
+            if event.speaker == "user":
+                if diagnostics is not None:
+                    diagnostics.user_transcript_chunks += 1
+                if reminder_approval is not None and event.text:
+                    reminder_approval.hear_user(event.text)
             if event.speaker == "assistant" and event.text:
                 answer_parts.append(event.text)
             _display(event)
         elif event.kind is EventKind.INTERRUPTED:
+            if reminder_approval is not None:
+                reminder_approval.abort_turn()
             speaker.flush()
             sources.clear()
             suggestions = None
@@ -164,6 +187,8 @@ async def _voice_events(
         else:
             _display(event)
         if event.kind is EventKind.TURN_COMPLETE:
+            if reminder_approval is not None:
+                _show_reminder_result(reminder_approval.finish_turn())
             if sources or suggestions:
                 print("Web search sources returned:")
                 if sources:
@@ -303,6 +328,7 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
         loop=loop, sample_rate=settings.input_sample_rate, device=args.input_device
     )
     speaker = Speaker(sample_rate=settings.output_sample_rate, device=args.output_device)
+    reminder_approval = VoiceReminderApproval(ScheduleStore()) if args.reminders else None
     manager = SessionManager(
         GeminiLiveProvider(
             settings,
@@ -310,6 +336,7 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
             enable_local_clock=True,
             enable_web_search=args.web,
             enable_weather=True,
+            **({"reminder_approval": reminder_approval} if reminder_approval else {}),
         ),
         queue_size=settings.event_queue_size,
     )
@@ -330,7 +357,8 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
         await manager.start()
         receiver = asyncio.create_task(
             _voice_events(
-                manager, speaker, turn_finished, diagnostics, search_preview=search_preview
+                manager, speaker, turn_finished, diagnostics, search_preview=search_preview,
+                reminder_approval=reminder_approval,
             ),
             name="friday-speaker-events"
         )
@@ -341,6 +369,12 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
             print(
                 f"Web search enabled ({settings.search_backend}); "
                 "lookups use separate API credits/quota."
+            )
+        if reminder_approval is not None:
+            print(
+                "Reminder drafting enabled. A draft is NOT saved until explicitly approved "
+                "in a later turn. Say 'yes, create that reminder' or type /approve; "
+                "say 'cancel reminder' or type /reject to discard."
             )
         async with asyncio.timeout(args.max_seconds or settings.max_session_seconds):
             while True:
@@ -377,6 +411,12 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
                 command = command_task.result().strip().lower()
                 if command in {"/quit", "/exit"}:
                     break
+                if command in {"/approve", "/reject"} and reminder_approval is not None:
+                    _show_reminder_result(
+                        reminder_approval.approve() if command == "/approve"
+                        else reminder_approval.reject()
+                    )
+                    continue
                 if command:
                     print("Unknown command; press Enter to toggle the microphone or type /quit.")
                     continue
@@ -391,6 +431,8 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
                     # fast completion must remain visible to the response waiter.
                     turn_finished.clear()
                     diagnostics.reset()
+                    if reminder_approval is not None:
+                        reminder_approval.begin_turn()
                     await turns.start()
                     print("Recording... press Enter to stop.")
         return 0
@@ -556,6 +598,10 @@ def build_parser() -> argparse.ArgumentParser:
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
     talk.add_argument("--max-seconds", type=int, help="Override session duration limit")
+    talk.add_argument(
+        "--reminders", action="store_true",
+        help="Opt in to voice reminder drafts with explicit human approval",
+    )
     talk.add_argument(
         "--web", action="store_true",
         help="Opt in to web search and source links (Tavily by default)",

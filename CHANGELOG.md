@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.1 — Opt-in voice reminder drafts and approval (Windows acceptance pending)
+
+- Add `talk --reminders` with typed, ephemeral, one-at-a-time reminder drafts.
+- Validate the future ISO 8601 time with an explicit UTC offset; no schedule is
+  written when Gemini merely proposes a draft.
+- Require a distinct subsequent user voice turn with exact approval wording, or
+  explicit `/approve`; support rejection by voice or `/reject`.
+- Only the application writes an approved reminder to the existing SQLite store;
+  background Google Calendar sync remains the independent worker's job.
+- Discard unapproved drafts on expiry or voice-session shutdown. No raw audio
+  or approval transcript is persisted.
+- Add offline regression tests. Real Gemini Live and iPhone acceptance pending.
+
 ## 0.4.0 — Optional Google Calendar sync (Windows/Google acceptance pending)
 
 - Add explicit Desktop OAuth with the narrow calendar.app.created permission.

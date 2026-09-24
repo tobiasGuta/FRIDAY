@@ -22,7 +22,7 @@ FRIDAY owns the application lifecycle, event types, provider interface and confi
 - `friday talk` and `friday live`: Gemini may call the narrowly allowlisted `get_local_time` function instead of guessing the current date or time.
 - Session state changes, idempotent shutdown, bounded event queue, basic session metrics, and automated tests.
 
-**Not yet implemented:** reminders, wake word, always-on listening, persistent memory, arbitrary computer actions, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The currently available model-callable functions are the read-only clock, location-explicit weather, and opt-in web search. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
+**Not yet implemented:** recurring reminders, wake word, always-on listening, persistent memory, arbitrary computer actions, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The currently available model-callable functions are the read-only clock, location-explicit weather, and opt-in web search. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
 
 ## Requirements
 
@@ -73,6 +73,40 @@ Press **Enter** to activate the microphone, speak, and press **Enter** again to 
 
 **Turn sequencing and playback (v0.3.1):** After stopping the microphone, wait for FRIDAY to finish her response. Another ordinary recording cannot begin until Gemini reports completion or interruption and the speaker buffer has drained. Extra Enter presses during playback are ignored; `/quit` remains available. A response stalls after 30 seconds without provider or actual playback progress and displays per-turn audio and event counters without logging raw audio; the configured overall session limit still applies. Long replies use bounded, lossless playback backpressure instead of discarding speech when Gemini sends audio faster than the speakers can play it. Gemini server-side VAD is disabled for `talk`; FRIDAY sends explicit activity start/end around captured PCM. The separate text `live` diagnostic still uses the default Gemini activity mode. This is still toggle-to-talk, not hands-free barge-in. Use headphones to minimize speaker-to-microphone echo; acoustic echo cancellation is not implemented.
 
+
+### Voice reminder approval — opt-in (v0.4.1)
+
+Start the independent scheduler with Google Calendar sync in one terminal:
+
+```powershell
+python -m friday schedule worker --calendar-sync
+```
+
+In another terminal, explicitly opt in to voice drafting:
+
+```powershell
+python -m friday talk --input-device 1 --reminders
+```
+
+Say, for example, "Friday, remind me tomorrow at seven PM to study."
+The model may call `get_local_time`, then `draft_reminder` with a validated
+future ISO 8601 time including an explicit UTC offset. FRIDAY prints a
+**REMINDER DRAFT** notice. It has **not** created an event or written SQLite.
+Wait for the spoken answer to finish. In a **new** Enter-to-talk turn, say
+exactly "Yes, create that reminder" (or simply "Yes"). A user-input
+transcription must match an allowlisted whole phrase: the model cannot
+approve its own draft. A successful commit prints **REMINDER CREATED** with an
+ID. You may also type `/approve`, or say "Cancel reminder" or type `/reject`.
+A draft expires after five minutes or disappears on exit. If speech is
+mis-transcribed, the app does not save it; use `/approve` to confirm the
+visible pending draft. Do not mistake the model's spoken assurance for a save:
+the terminal's **REMINDER CREATED** message and `schedule list` are authoritative.
+
+The worker publishes approved future reminders on startup and approximately
+every 60 seconds. Voice mode does not directly call Google and does not need
+your Google credentials. Existing `talk` sessions without `--reminders` keep
+their read-only model tool surface. This first slice is for one-time reminders;
+no recurring schedules, edits or two-way mobile sync are implemented.
 
 ### iPhone calendar view — opt-in Google Calendar sync (v0.4.0)
 
