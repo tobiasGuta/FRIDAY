@@ -4,7 +4,7 @@ import pytest
 
 from friday.core.events import EventKind, SessionState, VoiceEvent
 from friday.core.provider import ProviderCapabilityError
-from friday.core.session import SessionError, SessionManager
+from friday.core.session import SessionError, SessionManager, safe_provider_error
 from friday.providers.fake import FakeVoiceProvider
 
 
@@ -155,3 +155,41 @@ def test_burst_provider_audio_uses_backpressure_not_queue_eviction():
         await manager.close()
 
     asyncio.run(scenario())
+
+
+
+def test_safe_connection_error_exposes_codes_without_raw_message_or_secret():
+    class RejectedConfig(Exception):
+        code = 1007
+        status = "INVALID_ARGUMENT"
+
+    exc = RejectedConfig(
+        "Request failed: API_KEY=secret-value; https://example.invalid/api"
+    )
+    assert safe_provider_error(exc) == (
+        "RejectedConfig, code=1007, status=INVALID_ARGUMENT"
+    )
+    assert "secret-value" not in safe_provider_error(exc)
+    assert safe_provider_error(ConnectionError("secret-value")) == "ConnectionError"
+
+    async def scenario():
+        class RejectedProvider(FakeVoiceProvider):
+            async def connect(self):
+                raise exc
+
+        manager = SessionManager(RejectedProvider())
+        with pytest.raises(SessionError) as raised:
+            await manager.start()
+        assert "code=1007" in str(raised.value)
+        assert "secret-value" not in str(raised.value)
+        assert raised.value.__cause__ is exc
+        await manager.close()
+
+    asyncio.run(scenario())
+
+
+def test_safe_connection_error_reads_websocket_close_code_without_raw_reason():
+    class Closed(Exception):
+        rcvd = type("Frame", (), {"code": 1008, "reason": "token=secret-value"})()
+
+    assert safe_provider_error(Closed("secret-value")) == "Closed, code=1008"

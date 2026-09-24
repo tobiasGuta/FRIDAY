@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3 — Web connection diagnostics
+
+- Fix Ruff import ordering in the offline web-search tests.
+- Display a safely filtered provider error class and structured status/close code
+  on connection failure without logging raw SDK messages, credentials or headers.
+- Add `friday web-check` (Search alone) and `friday web-check --with-clock`
+  (Search plus clock), connection-only diagnostics requiring no microphone,
+  speaker, prompt or search query.
+- Leave ordinary `friday talk` and its push-to-talk prompt unchanged. No
+  automatic fallback to ungrounded answers or extra paid sessions.
+
+
 ## 0.3.2 — Opt-in Google Search grounding
 
 - Add `talk --web` as explicit opt-in for Google Search in the Gemini Live session.

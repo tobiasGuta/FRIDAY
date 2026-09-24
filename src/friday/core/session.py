@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from time import monotonic
@@ -14,6 +15,43 @@ logger = logging.getLogger(__name__)
 
 class SessionError(RuntimeError):
     """An operation is invalid for the current session or its provider failed."""
+
+
+def safe_provider_error(exc: Exception) -> str:
+    """Only print error class and structured status/code, never raw API errors.
+
+    Upstream error messages can contain request or authentication details; this
+    diagnostic deliberately avoids str(exc), repr(exc), URLs and headers.
+    """
+    name = type(exc).__name__
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", name) is None:
+        name = "ProviderError"
+    details = []
+    for candidate in (exc, exc.__cause__, exc.__context__):
+        if candidate is None:
+            continue
+        for attr in ("code", "close_code"):
+            value = getattr(candidate, attr, None)
+            if type(value) is int and 100 <= value <= 9999:
+                detail = f"code={value}"
+                if detail not in details:
+                    details.append(detail)
+        received = getattr(candidate, "rcvd", None)
+        value = getattr(received, "code", None)
+        if isinstance(value, int) and 100 <= value <= 9999:
+            detail = f"code={value}"
+            if detail not in details:
+                details.append(detail)
+        status = getattr(candidate, "status", None)
+        if isinstance(status, str) and status in {
+            "INVALID_ARGUMENT", "UNIMPLEMENTED", "PERMISSION_DENIED",
+            "RESOURCE_EXHAUSTED", "UNAUTHENTICATED", "UNAVAILABLE",
+            "INTERNAL", "FAILED_PRECONDITION", "NOT_FOUND",
+        }:
+            detail = f"status={status}"
+            if detail not in details:
+                details.append(detail)
+    return name + (", " + ", ".join(details[:3]) if details else "")
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,12 +121,9 @@ class SessionManager:
             await self._provider.connect()
         except Exception as exc:
             self._set_state(SessionState.FAILED)
-            self._emit(
-                VoiceEvent(
-                    EventKind.ERROR, text=f"Provider connection failed ({type(exc).__name__})"
-                )
-            )
-            raise SessionError("Provider connection failed") from exc
+            failure = f"Provider connection failed ({safe_provider_error(exc)})"
+            self._emit(VoiceEvent(EventKind.ERROR, text=failure))
+            raise SessionError(failure) from exc
         self._set_state(SessionState.READY)
         self._pump_task = asyncio.create_task(self._pump(), name="friday-provider-events")
 

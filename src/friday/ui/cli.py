@@ -257,6 +257,26 @@ async def _await_voice_response(
             await asyncio.gather(command_task, finish_task, return_exceptions=True)
 
 
+async def _web_check(args: argparse.Namespace, settings: Settings) -> int:
+    """Diagnose Live setup with no microphone, speakers, prompt, or search query."""
+    settings.require_gemini_key()
+    mode = "Search + local clock" if args.with_clock else "Search only"
+    print(f"Checking Gemini Live setup: {mode} (no microphone or search query).")
+    manager = SessionManager(
+        GeminiLiveProvider(
+            settings, manual_activity=True, enable_local_clock=args.with_clock,
+            enable_web_search=True,
+        ),
+        queue_size=settings.event_queue_size,
+    )
+    try:
+        await manager.start()
+        print(f"Gemini accepted the {mode} connection configuration.")
+        return 0
+    finally:
+        await manager.close()
+
+
 async def _talk(args: argparse.Namespace, settings: Settings) -> int:
     settings.require_gemini_key()
     # Only the explicit talk command opens a microphone. The text demo is unaffected.
@@ -389,6 +409,13 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--text", default="Hello FRIDAY. Introduce yourself in one sentence.")
     live.add_argument("--output", help="Explicitly save generated speech as a 24 kHz WAV")
     live.add_argument("--timeout", type=int, default=45, help="Maximum wait in seconds")
+    web_check = sub.add_parser(
+        "web-check", help="Check Gemini Search setup without microphone or prompt"
+    )
+    web_check.add_argument(
+        "--with-clock", action="store_true",
+        help="Also declare FRIDAY's clock, to diagnose combined-tool support",
+    )
     talk = sub.add_parser("talk", help="Live microphone -> Gemini -> speaker conversation")
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
@@ -432,6 +459,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "devices":
             print(list_audio_devices())
             return 0
+        if args.command == "web-check":
+            return asyncio.run(_web_check(args, settings))
         if args.command == "talk":
             if args.max_seconds is not None and args.max_seconds < 5:
                 raise ValueError("--max-seconds must be at least 5")

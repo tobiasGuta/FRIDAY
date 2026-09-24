@@ -3,15 +3,16 @@
 import asyncio
 from types import SimpleNamespace as Obj
 
+from test_clock_live import install_mock_sdk
+from test_voice_cli import RecordingSpeaker
+
 from friday.config import Settings
 from friday.core.events import EventKind, SearchSource, VoiceEvent
 from friday.core.session import SessionManager
 from friday.providers.fake import FakeVoiceProvider
 from friday.providers.gemini_live import GeminiLiveProvider, normalize_gemini_message
 from friday.tools.search_grounding import SearchPreview, extract_search_grounding
-from friday.ui.cli import _voice_events, build_parser
-from test_clock_live import install_mock_sdk
-from test_voice_cli import RecordingSpeaker
+from friday.ui.cli import _voice_events, _web_check, build_parser
 
 
 def _content(*, metadata=None, transcript=None, complete=False):
@@ -175,3 +176,37 @@ def test_opt_in_cli_flag_preserves_old_default_and_prompt():
     assert old.web is False
     assert opt_in.web is True
     assert opt_in.output_device is None
+
+
+
+def test_web_check_uses_no_microphone_or_prompt(monkeypatch, capsys):
+    session, clients = install_mock_sdk(monkeypatch, [])
+    from google.genai import types
+
+    for name in ("RealtimeInputConfig", "AutomaticActivityDetection"):
+        setattr(types, name, lambda **kwargs: Obj(**kwargs))
+
+    async def scenario():
+        settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key")
+        assert await _web_check(Obj(with_clock=False), settings) == 0
+        assert clients[0].config.tools == [{"google_search": {}}]
+        assert clients[0].config.realtime_input_config.automatic_activity_detection.disabled
+        assert await _web_check(Obj(with_clock=True), settings) == 0
+        assert clients[1].config.tools[0] == {"google_search": {}}
+        assert clients[1].config.tools[1]["function_declarations"][0]["name"] == (
+            "get_local_time"
+        )
+        assert session.tool_responses == []
+        assert not hasattr(session, "sent")
+
+    asyncio.run(scenario())
+    out = capsys.readouterr().out
+    assert "Search only" in out
+    assert "Search + local clock" in out
+
+
+def test_web_check_parser_defaults_to_search_only():
+    alone = build_parser().parse_args(["web-check"])
+    combined = build_parser().parse_args(["web-check", "--with-clock"])
+    assert not alone.with_clock
+    assert combined.with_clock

@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.3.2 adds opt-in live Google Search grounding to the stable voice assistant.**
+A harness-first personal AI assistant. **v0.3.3 adds safe connection diagnostics for the Search integration.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.3.2)
+## What works today (v0.3.3)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -93,7 +93,7 @@ If the sounddevice/PortAudio backend cannot open a device, FRIDAY reports a loca
 
 **Validation boundary:** Offline automated tests cover fake audio device callbacks, PCM framing, buffer limits, two-turn delivery, interruption flush, and cleanup. They do not prove that an individual Windows microphone, sound driver, or Gemini account works; test with real hardware and your own key. The `talk` command uses API quota. No local raw recordings are persisted by default.
 
-### Opt-in live Google Search (v0.3.2)
+### Opt-in live Google Search (v0.3.3)
 
 Google Search is **off by default** so ordinary conversations do not unexpectedly
 trigger search-grounding usage. To enable it for one voice session:
@@ -116,6 +116,24 @@ have distinct quota/billing implications; check the Google AI Studio project.
 The standalone `friday tools` command lists FRIDAY-owned functions and does not
 list provider-native Google Search, which is opted into separately with `--web`.
 The normal command and the `FRIDAY [Enter: talk/stop, /quit]:` prompt are unchanged.
+
+### Diagnose Google Search setup
+
+If `talk --web` fails before connecting, check Search alone and then Search
+combined with the clock, without opening a microphone or sending a search query:
+
+```powershell
+py -m friday web-check
+py -m friday web-check --with-clock
+```
+
+These commands open a Gemini Live API session briefly and close it; they do
+not generate speech or execute Search queries, but account-level connection
+limits may apply. Any failure displays the error type and structured status or
+numeric close code **without printing the provider's raw message, API key, URL,
+or request headers**. A passing connection check verifies setup acceptance only,
+not that a real search result is returned. Do not assume any failure is a quota
+issue without an error code.
 
 ## Architecture
 

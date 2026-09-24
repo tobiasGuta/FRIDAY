@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "friday-assistant"
-version = "0.3.2"
+version = "0.3.3"
 description = "Harness-first personal voice assistant foundation"
 readme = "README.md"
 requires-python = ">=3.11"
