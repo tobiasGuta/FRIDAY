@@ -26,7 +26,9 @@ def register_academic_calendar(
             "status": "ok",
             "source": "CUNY Brightspace iCalendar (local read-only cache)",
             "last_success": result.last_success,
-            "coverage": "Only items published to the calendar feed; not a complete assignment list.",
+            "coverage": (
+                "Only items published to the calendar feed; not a complete assignment list."
+            ),
             "recurrence_note": "Recurring series are not expanded into every occurrence.",
             "items": [
                 {
