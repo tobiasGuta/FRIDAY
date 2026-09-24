@@ -10,6 +10,7 @@ from friday.brightspace_calendar import (
     BrightspaceError,
     display_time,
     parse_calendar,
+    source_labeled_due,
 )
 from friday.brightspace_feed import (
     ACCOUNT,
@@ -213,3 +214,36 @@ def test_replacing_feed_erases_previous_course_cache(tmp_path):
     assert load_feed(vault=vault) == second
     assert not store.path.exists()
     assert store.snapshot().items == ()
+
+
+def test_due_named_brightspace_event_is_source_labeled_not_verified_due(tmp_path):
+    sample = b"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:worksheet
+DTSTART:20260924T235900Z
+SUMMARY:Worksheet I - Due
+END:VEVENT
+BEGIN:VEVENT
+UID:unrelated
+DTSTART:20260925T140000Z
+SUMMARY:Due diligence discussion
+END:VEVENT
+BEGIN:VTODO
+UID:explicit-task
+DUE;VALUE=DATE:20260926
+SUMMARY:Lab submission
+END:VTODO
+END:VCALENDAR
+"""
+    items = {item.uid: item for item in parse_calendar(sample)}
+    assert source_labeled_due(items["worksheet"])
+    assert not items["worksheet"].explicit_due
+    assert not source_labeled_due(items["unrelated"])
+    assert items["explicit-task"].explicit_due
+    assert not source_labeled_due(items["explicit-task"])
+    store = AcademicStore(tmp_path / "academic.sqlite3")
+    store.replace(tuple(items.values()))
+    persisted = {item.uid: item for item in store.snapshot().items}
+    assert source_labeled_due(persisted["worksheet"])
+    assert not persisted["worksheet"].explicit_due
