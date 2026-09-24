@@ -41,10 +41,10 @@
 
 - Live web search (proposed v0.3.2), then weather and timers/reminders one at a time.
 
-## v0.3.2–v0.3.4 — Grounded web search (delegated implementation; Windows acceptance pending)
+## v0.3.2–v0.3.5 — Grounded web search (delegated implementation; Windows acceptance pending)
 
 - Search opt-in `talk --web` registers a typed `search_web` function alongside the clock.
-- A separate grounded Gemini 3.8 Flash request avoids the native Live Search setup failure (1011); Search request success and speech remain to be validated on Windows.
+- A separate grounded Gemini 3.8 Flash request avoids the native Live Search setup failure (1011); v0.3.5 narrows the delegated Live function declaration after its initial 1007 setup rejection. Search request success and speech remain to be validated on Windows.
 - Print supplied grounding source links and show native Google Search Suggestions in a disposable browser preview.
 - Test missing or malformed grounding metadata, safe link display, and no-search defaults.
 - Next Phase 1 slices: weather, timers and reminders.

@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.3.4 routes opt-in web lookup through a separate grounded text request, preserving the tested Live voice connection.**
+A harness-first personal AI assistant. **v0.3.5 fixes the delegated search function declaration for Gemini Live setup.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.3.4)
+## What works today (v0.3.5)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -93,7 +93,7 @@ If the sounddevice/PortAudio backend cannot open a device, FRIDAY reports a loca
 
 **Validation boundary:** Offline automated tests cover fake audio device callbacks, PCM framing, buffer limits, two-turn delivery, interruption flush, and cleanup. They do not prove that an individual Windows microphone, sound driver, or Gemini account works; test with real hardware and your own key. The `talk` command uses API quota. No local raw recordings are persisted by default.
 
-### Opt-in grounded web search (v0.3.4)
+### Opt-in grounded web search (v0.3.5)
 
 Search is **off by default**. To enable it for one voice session:
 
@@ -106,7 +106,8 @@ FRIDAY's already-working Live connection exposes a strictly validated, read-only
 `search_web` function alongside `get_local_time`. When requested, that
 function makes a **separate** Gemini `generate_content` text request with Google's
 Search grounding tool, using `FRIDAY_SEARCH_MODEL` (default `gemini-3.8-flash`).
-Native Google Search is **not** declared on the Live connection: on this
+The search function uses a minimal Gemini Live-compatible parameter schema;
+strict 3–200 character and extra-field validation happens locally. Native Google Search is **not** declared on the Live connection: on this
 project/model, even a minimal native-Search connection returned APIError 1011.
 This workaround does not claim to fix that upstream failure.
 

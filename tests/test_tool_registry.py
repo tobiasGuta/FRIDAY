@@ -68,8 +68,14 @@ def test_typed_arguments_reject_unknown_missing_and_coerced_values():
         )
     )
     decl = registry.declarations()[0]
-    assert decl["parameters"]["additionalProperties"] is False
-    assert set(decl["parameters"]["required"]) == {"location", "days"}
+    assert decl["parameters"] == {
+        "type": "OBJECT",
+        "properties": {
+            "location": {"type": "STRING"},
+            "days": {"type": "INTEGER"},
+        },
+        "required": ["location", "days"],
+    }
     for invalid in (
         {},
         {"location": "Queens", "days": "2"},
@@ -159,3 +165,15 @@ def test_tools_cli_does_not_need_api_key(monkeypatch, tmp_path, capsys):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert main(["tools"]) == 0
     assert capsys.readouterr().out.strip() == "get_local_time: read_only"
+
+
+def test_live_declarations_fail_closed_for_unmapped_nested_argument_shapes():
+    class NestedArguments(ToolArguments):
+        settings: dict[str, str]
+
+    spec = ToolSpec(
+        "nested_test", "Not supported on Live", NestedArguments,
+        lambda _: {"status": "ok"}, "Nested test",
+    )
+    with pytest.raises(ValueError, match="Unsupported Live argument schema"):
+        spec.declaration()

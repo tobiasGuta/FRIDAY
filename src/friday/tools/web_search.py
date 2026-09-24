@@ -19,7 +19,11 @@ SEARCH_TOOL_NAME = "search_web"
 
 
 class SearchArguments(ToolArguments):
-    query: str = Field(min_length=3, max_length=200)
+    query: str = Field(
+        min_length=3,
+        max_length=200,
+        description="Public web search query, between 3 and 200 characters.",
+    )
 
 
 class WebSearchService:

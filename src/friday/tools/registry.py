@@ -45,11 +45,29 @@ class ToolSpec:
         """Return a fresh SDK-neutral declaration derived from typed arguments."""
         declaration: dict[str, Any] = {"name": self.name, "description": self.description}
         schema = self.arguments.model_json_schema()
-        # Gemini Live accepts parameterless function declarations; preserve the
-        # already field-tested clock declaration rather than changing its wire shape.
-        if schema.get("properties"):
-            schema.pop("title", None)
-            declaration["parameters"] = schema
+        # Live's `parameters` field accepts an OpenAPI-like Schema, not the full
+        # Pydantic JSON Schema. Keep stringent min/max and extra-field validation
+        # locally in execute(); never expose unsupported schema keywords to Live.
+        # A new argument type must be explicitly supported here rather than
+        # silently losing its type or being emitted as an untyped object.
+        properties = schema.get("properties", {})
+        if properties:
+            supported = {"string": "STRING", "integer": "INTEGER",
+                         "number": "NUMBER", "boolean": "BOOLEAN"}
+            live_properties: dict[str, dict[str, Any]] = {}
+            for field_name, field_schema in properties.items():
+                field_type = supported.get(field_schema.get("type"))
+                if field_type is None or "$ref" in field_schema or "anyOf" in field_schema:
+                    raise ValueError(f"Unsupported Live argument schema for {self.name}")
+                field_declaration: dict[str, Any] = {"type": field_type}
+                if field_schema.get("description"):
+                    field_declaration["description"] = field_schema["description"]
+                live_properties[field_name] = field_declaration
+            declaration["parameters"] = {
+                "type": "OBJECT",
+                "properties": live_properties,
+                "required": schema.get("required", []),
+            }
         return declaration
 
 

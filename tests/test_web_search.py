@@ -225,6 +225,16 @@ def test_delegated_search_strict_opt_in_and_input_validation(monkeypatch):
     registry = ToolRegistry()
     register_web_search(registry, WebSearchService(settings))
     assert [d["name"] for d in registry.declarations()] == ["search_web"]
+    assert registry.declarations()[0]["parameters"] == {
+        "type": "OBJECT",
+        "properties": {
+            "query": {
+                "type": "STRING",
+                "description": "Public web search query, between 3 and 200 characters.",
+            }
+        },
+        "required": ["query"],
+    }
     assert registry.execute("search_web", {"query": "x"}) == {
         "status": "error", "error": "invalid_arguments"
     }

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.5 — Live function declaration schema fix
+
+- Translate typed Pydantic tool argument models to a minimal Gemini Live
+  OpenAPI-style function schema rather than forwarding full JSON Schema.
+- Omit `additionalProperties`, `minLength`, `maxLength`, and Pydantic titles
+  from the Live declaration; retain strict validation in the local tool registry.
+- Keep the parameterless clock declaration and default voice mode unchanged.
+- Fail closed on unsupported argument shapes; add exact-schema and rejection tests.
+- Real `web-check` and grounded search acceptance remain pending on Windows.
+
+
 ## 0.3.4 — Delegated grounded web search
 
 - Replace native Google Search in the Live setup (minimal connection failed with 1011)
