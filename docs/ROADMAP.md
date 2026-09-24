@@ -8,13 +8,13 @@
 - Session state machine, error handling, idempotent shutdown.
 - Unit tests without external API usage.
 
-## v0.2 Voice Vertical Slice (implemented; Windows hardware acceptance pending)
+## v0.2 Voice Vertical Slice (implemented; Windows headset multi-turn test succeeded)
 
 - sounddevice/PortAudio device abstraction; 16 kHz mono PCM input and 24 kHz PCM output.
 - Enter-to-talk/Enter-to-stop toggle, bounded microphone sender and bounded playback buffer.
 - Playback flush on Gemini interruption or new turn; clean device shutdown on errors.
 - `talk` command streams a microphone-to-Gemini-to-speaker conversation with transcript display.
-- Offline tests with fake audio source/sink pass; user hardware and live integration remain to validate.
+- Offline tests with fake audio source/sink pass; user confirmed successful Windows headset voice interaction.
 
 ## v0.2.3 Read-only local clock (implemented; live voice acceptance pending)
 
