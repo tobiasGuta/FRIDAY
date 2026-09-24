@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.7 — Tavily-backed opt-in web search
+
+- Add Tavily Basic Search as the default opt-in `search_web` backend and keep
+  Gemini Live for the already-tested voice connection.
+- Configure `TAVILY_API_KEY` as a secret; reject a missing key before voice
+  hardware opens. The former Gemini grounded-text backend is explicit opt-in.
+- Add `friday web-search --query` to test one search without mic or Live credits.
+- Make one HTTPS POST to Tavily with up to five results; disable Tavily's extra
+  answer synthesis, images and full-page extraction. Bound the response and
+  snippets; display only deduplicated HTTPS source links.
+- Preserve strict tool argument checks, 429 no-repeat policy, no raw provider
+  errors/queries in logs, and the unchanged Enter-to-talk voice flow.
+- Add offline HTTP contract tests with a fake transport, including malformed,
+  unsafe, rate-limited, oversized and missing-key cases.
+- Real Tavily key/credits and Windows headset search acceptance remain pending.
+
+
 ## 0.3.6 — Search quota handling and lint regression
 
 - Fix the Ruff E501 test line-length error from v0.3.5.

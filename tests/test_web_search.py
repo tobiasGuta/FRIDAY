@@ -167,9 +167,12 @@ def test_source_urls_display_once_after_answer_and_reset_between_turns(capsys):
     asyncio.run(scenario())
     output = capsys.readouterr().out
     assert output.count("https://example.com/item") == 1
-    assert output.count("Google Search grounding returned") == 1
+    assert output.count("Web search sources returned") == 1
     assert output.count("FRIDAY turn complete") == 2
-    assert output.index("assistant: A grounded answer.") < output.index("Google Search grounding")
+    assert (
+        output.index("assistant: A grounded answer.")
+        < output.index("Web search sources returned")
+    )
 
 
 def test_opt_in_cli_flag_preserves_old_default_and_prompt():
@@ -282,7 +285,7 @@ def test_separate_grounded_request_uses_text_model_and_actual_sources(monkeypatc
     monkeypatch.setitem(sys.modules, "google", google)
     monkeypatch.setitem(sys.modules, "google.genai", genai)
     monkeypatch.setitem(sys.modules, "google.genai.types", types)
-    settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key")
+    settings = Settings(_env_file=None, GEMINI_API_KEY="mock-key", search_backend="gemini")
     result = WebSearchService(settings).search("current Python release")
     assert result["status"] == "ok"
     assert result["sources"] == [{"title": "Official", "url": "https://example.com/official"}]
@@ -373,7 +376,9 @@ def test_http_429_returns_clear_error_and_blocks_further_api_calls(monkeypatch):
     monkeypatch.setitem(sys.modules, "google", google)
     monkeypatch.setitem(sys.modules, "google.genai", genai)
     monkeypatch.setitem(sys.modules, "google.genai.types", types)
-    service = WebSearchService(Settings(_env_file=None, GEMINI_API_KEY="mock-key"))
+    service = WebSearchService(
+        Settings(_env_file=None, GEMINI_API_KEY="mock-key", search_backend="gemini")
+    )
     error = {"status": "error", "error": "search_rate_limited"}
     assert service.search("latest Python release") == error
     assert service.search("latest other release") == error

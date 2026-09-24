@@ -41,13 +41,14 @@
 
 - Live web search (proposed v0.3.2), then weather and timers/reminders one at a time.
 
-## v0.3.2–v0.3.6 — Grounded web search (delegated implementation; live search quota pending)
+## v0.3.2–v0.3.7 — Web search (Tavily backend implemented; real key acceptance pending)
 
 - Search opt-in `talk --web` registers a typed `search_web` function alongside the clock.
 - A separate grounded Gemini 3.8 Flash request avoids the native Live Search setup failure (1011); v0.3.5 narrows the delegated Live function declaration after its initial 1007 setup rejection. Search request success and speech remain to be validated on Windows.
 - Print supplied grounding source links and show native Google Search Suggestions in a disposable browser preview.
 - Test missing or malformed grounding metadata, safe link display, and no-search defaults.
 - v0.3.6 detects HTTP 429 and prevents repeat search requests for the current voice session; wait for API quota before retrying.
+- v0.3.7 adds Tavily Basic Search as the default optional backend, source snippets, validated HTTPS URLs and a one-shot `web-search` test; the legacy Gemini grounded backend remains opt-in.
 - Next Phase 1 slices: weather, timers and reminders.
 
 ## Later

@@ -102,3 +102,18 @@ as model input. Missing grounding and API errors return explicit errors, not
 uncited answers. Existing manual voice/audio handling and `get_local_time`
 are unchanged; search usage may incur additional cost. The diagnostic
 `web-check` now checks the delegated function declaration, not native Search.
+
+## v0.3.7 Tavily backend
+
+`FRIDAY_SEARCH_BACKEND=tavily` is the default when `--web` is enabled.
+`TAVILY_API_KEY` is validated before starting microphone/audio devices.
+The same strict, provider-independent `search_web(query)` tool is
+exposed to Live; its handler runs in the existing worker thread and sends one
+bounded HTTPS POST to the Tavily Search endpoint. Basic depth and five results
+bound credit cost and output size, while raw page content, Tavily answer synthesis,
+and image retrieval are disabled. Only normalized snippets and deduplicated
+HTTPS source titles/links are emitted to the voice model/UI. Source excerpts
+are untrusted data and not a verified full-page crawl. No arbitrary URL fetch,
+browsing or computer action is added. A 429 closes the search gate for the rest
+of the session. Google Search grounding remains a separately configured legacy
+backend; no automatic fallback is made on Tavily errors.

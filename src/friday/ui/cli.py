@@ -19,6 +19,7 @@ from friday.providers.gemini_live import GeminiLiveProvider
 from friday.tools.builtins import build_builtin_registry
 from friday.tools.local_clock import read_local_clock
 from friday.tools.search_grounding import SearchPreview
+from friday.tools.web_search import WebSearchService
 from friday.ui.terminal import TerminalCommands
 
 
@@ -152,7 +153,7 @@ async def _voice_events(
             _display(event)
         if event.kind is EventKind.TURN_COMPLETE:
             if sources or suggestions:
-                print("Google Search grounding returned:")
+                print("Web search sources returned:")
                 if sources:
                     for index, source in enumerate(sources.values(), 1):
                         print(f"  [{index}] {source.title} — {source.url}")
@@ -282,6 +283,8 @@ async def _web_check(args: argparse.Namespace, settings: Settings) -> int:
 
 async def _talk(args: argparse.Namespace, settings: Settings) -> int:
     settings.require_gemini_key()
+    if args.web and settings.search_backend == "tavily":
+        settings.require_tavily_key()
     # Only the explicit talk command opens a microphone. The text demo is unaffected.
     loop = asyncio.get_running_loop()
     mic = Microphone(
@@ -323,8 +326,8 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
         print("Press ENTER to start speaking, then ENTER again to stop. Type /quit to exit.")
         if args.web:
             print(
-                "Grounded web search is enabled; each lookup uses a separate "
-                "text API request and may be billed."
+                f"Web search enabled ({settings.search_backend}); "
+                "lookups use separate API credits/quota."
             )
         async with asyncio.timeout(args.max_seconds or settings.max_session_seconds):
             while True:
@@ -422,13 +425,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--with-clock", action="store_true",
         help="Also declare FRIDAY's clock, to diagnose combined-tool support",
     )
+    web_search = sub.add_parser(
+        "web-search", help="Run one explicit search without opening voice devices"
+    )
+    web_search.add_argument("--query", required=True, help="Public query (3–200 characters)")
     talk = sub.add_parser("talk", help="Live microphone -> Gemini -> speaker conversation")
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
     talk.add_argument("--max-seconds", type=int, help="Override session duration limit")
     talk.add_argument(
         "--web", action="store_true",
-        help="Opt in to Google Search grounding, source links and temporary browser suggestions",
+        help="Opt in to web search and source links (Tavily by default)",
     )
     return parser
 
@@ -464,6 +471,25 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "devices":
             print(list_audio_devices())
+            return 0
+        if args.command == "web-search":
+            from pydantic import ValidationError
+
+            from friday.tools.web_search import SearchArguments
+
+            try:
+                query = SearchArguments.model_validate({"query": args.query}, strict=True).query
+            except ValidationError:
+                print("FRIDAY: Search query must contain 3–200 characters.")
+                return 1
+            result = WebSearchService(settings).search(query)
+            if result.get("status") != "ok":
+                print(f"Web search unavailable: {result.get('error', 'unknown_error')}")
+                return 1
+            print(result["answer"])
+            print("Web search sources returned:")
+            for source in result["sources"]:
+                print(f"  {source['title']} — {source['url']}")
             return 0
         if args.command == "web-check":
             return asyncio.run(_web_check(args, settings))

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     model: str = "gemini-3.8-live"
     voice: str = "Kore"
     search_model: str = "gemini-3.8-flash"
+    search_backend: Literal["tavily", "gemini"] = "tavily"
+    tavily_api_key: SecretStr | None = Field(default=None, validation_alias="TAVILY_API_KEY")
     gemini_api_key: SecretStr | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     # BaseSettings reads environment values as strings; plain int enables parsing.
     input_sample_rate: int = 16000
@@ -41,6 +43,11 @@ class Settings(BaseSettings):
         if value != 24000:
             raise ValueError("FRIDAY_OUTPUT_SAMPLE_RATE must be 24000")
         return value
+
+    def require_tavily_key(self) -> str:
+        if self.tavily_api_key is None or not self.tavily_api_key.get_secret_value().strip():
+            raise ValueError("TAVILY_API_KEY is required for Tavily web search")
+        return self.tavily_api_key.get_secret_value()
 
     def require_gemini_key(self) -> str:
         if self.gemini_api_key is None or not self.gemini_api_key.get_secret_value().strip():
