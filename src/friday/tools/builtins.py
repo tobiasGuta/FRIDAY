@@ -2,6 +2,7 @@
 
 from friday.tools import local_clock
 from friday.tools.registry import NoArguments, ToolRegistry, ToolSpec
+from friday.tools.weather import WeatherService, register_weather
 
 
 def _read_clock(_arguments: NoArguments) -> dict[str, str]:
@@ -9,7 +10,9 @@ def _read_clock(_arguments: NoArguments) -> dict[str, str]:
     return {"status": "ok", **local_clock.read_local_clock()}
 
 
-def build_builtin_registry(*, enable_local_clock: bool = False) -> ToolRegistry:
+def build_builtin_registry(
+    *, enable_local_clock: bool = False, enable_weather: bool = False
+) -> ToolRegistry:
     registry = ToolRegistry()
     if enable_local_clock:
         registry.register(
@@ -21,4 +24,6 @@ def build_builtin_registry(*, enable_local_clock: bool = False) -> ToolRegistry:
                 notice="Read computer local clock",
             )
         )
+    if enable_weather:
+        register_weather(registry, WeatherService())
     return registry

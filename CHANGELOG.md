@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.8 — Read-only weather (Open-Meteo)
+
+- Register `get_weather(location, day)` for normal voice turns, independent
+  of the opt-in Tavily `--web` capability.
+- Use fixed Open-Meteo geocoding and forecast GET endpoints; no new API key.
+  Query today's current conditions and today/tomorrow's daily forecast in
+  the location's timezone. Units are °F, mph and percent.
+- Require an explicitly named location, return ambiguity options instead
+  of guessing, validate input/output, and attribute Open-Meteo.
+- Add `friday weather --location ... --day today|tomorrow` standalone diagnostic.
+- Keep HTTPS-only endpoints, no redirects, bounded HTTP responses, no raw
+  provider errors/locations in HTTP INFO logs and one-session 429 circuit.
+- Preserve the voice prompt, local clock, Tavily web search and all existing
+  audio behavior. Add mocked HTTP, strict registry and Live round-trip tests.
+- Real weather/Windows acceptance is still pending.
+
+
 ## 0.3.7 — Tavily-backed opt-in web search
 
 - Add Tavily Basic Search as the default opt-in `search_web` backend and keep

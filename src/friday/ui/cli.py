@@ -20,6 +20,7 @@ from friday.tools.builtins import build_builtin_registry
 from friday.tools.local_clock import read_local_clock
 from friday.tools.search_grounding import SearchPreview
 from friday.tools.web_search import WebSearchService
+from friday.tools.weather import WeatherArguments, WeatherService
 from friday.ui.terminal import TerminalCommands
 
 
@@ -297,6 +298,7 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
             manual_activity=True,
             enable_local_clock=True,
             enable_web_search=args.web,
+            enable_weather=True,
         ),
         queue_size=settings.event_queue_size,
     )
@@ -429,6 +431,9 @@ def build_parser() -> argparse.ArgumentParser:
         "web-search", help="Run one explicit search without opening voice devices"
     )
     web_search.add_argument("--query", required=True, help="Public query (3–200 characters)")
+    weather = sub.add_parser("weather", help="Check current/tomorrow weather without microphone")
+    weather.add_argument("--location", required=True, help="City, state or country (required)")
+    weather.add_argument("--day", choices=("today", "tomorrow"), default="today")
     talk = sub.add_parser("talk", help="Live microphone -> Gemini -> speaker conversation")
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
@@ -446,6 +451,8 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=getattr(logging, settings.log_level), format="%(levelname)s %(message)s"
     )
+    # HTTP GET URLs contain the user's requested location/coordinates.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if args.command == "doctor":
         print(f"FRIDAY {__version__}")
         print(f"Provider configured: {settings.provider}")
@@ -458,7 +465,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     try:
         if args.command == "tools":
-            for name, policy in build_builtin_registry(enable_local_clock=True).available_tools():
+            for name, policy in build_builtin_registry(
+                enable_local_clock=True, enable_weather=True
+            ).available_tools():
                 print(f"{name}: {policy.value}")
             return 0
         if args.command == "clock":
@@ -471,6 +480,39 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "devices":
             print(list_audio_devices())
+            return 0
+        if args.command == "weather":
+            from pydantic import ValidationError
+
+            try:
+                request = WeatherArguments.model_validate(
+                    {"location": args.location, "day": args.day}, strict=True
+                )
+            except ValidationError:
+                print("FRIDAY: Weather location must contain 3–100 characters.")
+                return 1
+            result = WeatherService().lookup(request.location, request.day)
+            if result.get("status") != "ok":
+                if result.get("error") == "ambiguous_location":
+                    print("Specify city and state/country. Possible matches:")
+                    for option in result["options"]:
+                        print(f"  {option}")
+                else:
+                    print(f"Weather unavailable: {result.get('error', 'unknown_error')}")
+                return 1
+            print(f"Weather data by Open-Meteo.com: {result['location']} ({result['date']})")
+            print(
+                f"{result['conditions']}; high {result['high_f']:g}°F, "
+                f"low {result['low_f']:g}°F."
+            )
+            chance = result['precipitation_probability_max_percent']
+            print(
+                "Maximum precipitation probability: "
+                + (f"{chance:g}%." if chance is not None else "not provided.")
+            )
+            if 'current_temperature_f' in result:
+                print(f"Current temperature: {result['current_temperature_f']:g}°F.")
+            print(result['source_url'])
             return 0
         if args.command == "web-search":
             from pydantic import ValidationError

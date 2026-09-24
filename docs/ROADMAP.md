@@ -39,9 +39,9 @@
 
 ## Next Phase 1 slice
 
-- Live web search (proposed v0.3.2), then weather and timers/reminders one at a time.
+- Weather introduced in v0.3.8; next: local timers/reminders, after Windows acceptance.
 
-## v0.3.2–v0.3.7 — Web search (Tavily backend implemented; real key acceptance pending)
+## v0.3.2–v0.3.7 — Web search (Tavily backend implemented; Windows accepted)
 
 - Search opt-in `talk --web` registers a typed `search_web` function alongside the clock.
 - A separate grounded Gemini 3.8 Flash request avoids the native Live Search setup failure (1011); v0.3.5 narrows the delegated Live function declaration after its initial 1007 setup rejection. Search request success and speech remain to be validated on Windows.
@@ -49,7 +49,17 @@
 - Test missing or malformed grounding metadata, safe link display, and no-search defaults.
 - v0.3.6 detects HTTP 429 and prevents repeat search requests for the current voice session; wait for API quota before retrying.
 - v0.3.7 adds Tavily Basic Search as the default optional backend, source snippets, validated HTTPS URLs and a one-shot `web-search` test; the legacy Gemini grounded backend remains opt-in.
-- Next Phase 1 slices: weather, timers and reminders.
+- Windows acceptance: Tavily HTTP 200 and spoken answer with sources confirmed.
+- Next Phase 1 slice: weather, then timers and reminders.
+
+## v0.3.8 — Weather (Open-Meteo; Windows acceptance pending)
+
+- Two fixed read-only HTTPS API endpoints, geocoding and daily/current forecast.
+- Explicit location required; ask for region if ambiguous. Today/tomorrow only.
+- No new key for qualifying non-commercial use; attribution required.
+- Independent `friday weather` diagnostic; `get_weather` available to
+  normal voice sessions without `--web`, no changes to Enter-to-talk.
+- No computer-location inference or weather requests without a location query.
 
 ## Later
 

@@ -10,6 +10,7 @@ from friday.core.provider import ProviderCapabilityError
 from friday.tools.builtins import build_builtin_registry
 from friday.tools.search_grounding import extract_search_grounding
 from friday.tools.web_search import SEARCH_TOOL_NAME, WebSearchService, register_web_search
+from friday.tools.weather import WEATHER_TOOL_NAME
 
 FRIDAY_INSTRUCTION = (
     "You are FRIDAY, Tobias's personal AI assistant. Speak naturally and concisely. "
@@ -18,6 +19,16 @@ FRIDAY_INSTRUCTION = (
     "not geographic location; do not infer the computer's city or answer other cities' times "
     "from that clock alone. You can converse but cannot control the computer or retain "
     "long-term memories. Never claim an action occurred unless the application confirms it."
+)
+
+
+WEATHER_INSTRUCTION = (
+    " For weather questions, use get_weather when available; ask the user for a city "
+    "and region/country if no location was explicitly given. Never infer geography "
+    "from the computer clock, the user's name, or memory. This tool supports only "
+    "today and tomorrow. If location is ambiguous, ask the user to specify it; "
+    "do not guess. Describe precipitation percentages as a forecast, not certainty; "
+    "do not invent missing values. Attribute the forecast to Open-Meteo."
 )
 
 
@@ -78,10 +89,14 @@ class GeminiLiveProvider:
         manual_activity: bool = False,
         enable_local_clock: bool = False,
         enable_web_search: bool = False,
+        enable_weather: bool = False,
     ) -> None:
         self.settings = settings
         self._manual_activity = manual_activity
-        self._tool_registry = build_builtin_registry(enable_local_clock=enable_local_clock)
+        self._tool_registry = build_builtin_registry(
+            enable_local_clock=enable_local_clock, enable_weather=enable_weather
+        )
+        self._enable_weather = enable_weather
         self._enable_web_search = enable_web_search
         if enable_web_search:
             register_web_search(self._tool_registry, WebSearchService(settings))
@@ -110,6 +125,7 @@ class GeminiLiveProvider:
             response_modalities=[types.Modality.AUDIO],
             system_instruction=(
                 FRIDAY_INSTRUCTION
+                + (WEATHER_INSTRUCTION if self._enable_weather else "")
                 + (WEB_SEARCH_INSTRUCTION if self._enable_web_search else "")
             ),
             speech_config=types.SpeechConfig(
@@ -202,7 +218,10 @@ class GeminiLiveProvider:
                     responses = []
                     for call in getattr(tool_call, "function_calls", None) or []:
                         name = getattr(call, "name", None)
-                        if name == SEARCH_TOOL_NAME and self._enable_web_search:
+                        if (
+                            (name == SEARCH_TOOL_NAME and self._enable_web_search)
+                            or (name == WEATHER_TOOL_NAME and self._enable_weather)
+                        ):
                             # A blocking text request must never stall the voice event loop.
                             try:
                                 result = await asyncio.wait_for(
@@ -214,7 +233,13 @@ class GeminiLiveProvider:
                                     timeout=25.0,
                                 )
                             except TimeoutError:
-                                result = {"status": "error", "error": "search_timeout"}
+                                result = {
+                                    "status": "error",
+                                    "error": (
+                                        "weather_timeout" if name == WEATHER_TOOL_NAME
+                                        else "search_timeout"
+                                    ),
+                                }
                         else:
                             result = self._tool_registry.execute(name, getattr(call, "args", None))
                         if name == SEARCH_TOOL_NAME and result.get("status") == "ok":
@@ -236,20 +261,29 @@ class GeminiLiveProvider:
                                 id=call.id, name=name, response={"result": result}
                             )
                         )
-                        yield VoiceEvent(
-                            EventKind.NOTICE,
-                            text=(
-                                "Web search rate-limited (HTTP 429). "
-                                "No further web requests will be sent this session."
-                                if name == SEARCH_TOOL_NAME
-                                and result.get("error") == "search_rate_limited"
-                                else (
-                                    "Web search unavailable; no verified sources returned."
-                                    if name == SEARCH_TOOL_NAME and result.get("status") == "error"
-                                    else self._tool_registry.notice_for(name, result)
+                        if name == WEATHER_TOOL_NAME and result.get("status") == "error":
+                            if result.get("error") == "ambiguous_location":
+                                notice = "Weather location ambiguous; ask for state or country."
+                            elif result.get("error") == "weather_rate_limited":
+                                notice = (
+                                    "Weather provider rate-limited; no further weather "
+                                    "requests will be sent this session."
                                 )
-                            ),
-                        )
+                            else:
+                                notice = "Weather unavailable or location not found."
+                        elif (
+                            name == SEARCH_TOOL_NAME
+                            and result.get("error") == "search_rate_limited"
+                        ):
+                            notice = (
+                                "Web search rate-limited by Gemini (HTTP 429). "
+                                "No further web requests will be sent this session."
+                            )
+                        elif name == SEARCH_TOOL_NAME and result.get("status") == "error":
+                            notice = "Web search unavailable; no verified sources returned."
+                        else:
+                            notice = self._tool_registry.notice_for(name, result)
+                        yield VoiceEvent(EventKind.NOTICE, text=notice)
                     if responses:
                         # Set this before yielding any events from the same SDK
                         # message: a tool call may carry an intermediate completion.

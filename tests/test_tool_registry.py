@@ -164,7 +164,9 @@ def test_tools_cli_does_not_need_api_key(monkeypatch, tmp_path, capsys):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert main(["tools"]) == 0
-    assert capsys.readouterr().out.strip() == "get_local_time: read_only"
+    assert capsys.readouterr().out.strip().splitlines() == [
+        "get_local_time: read_only", "get_weather: read_only",
+    ]
 
 
 def test_live_declarations_fail_closed_for_unmapped_nested_argument_shapes():

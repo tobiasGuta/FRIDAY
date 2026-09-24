@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.3.7 makes Tavily the default opt-in web-search backend while keeping Gemini Live voice unchanged.**
+A harness-first personal AI assistant. **v0.3.8 adds a read-only Open-Meteo weather tool while preserving Tavily web search and Gemini Live voice.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.3.7)
+## What works today (v0.3.8)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -17,10 +17,12 @@ FRIDAY owns the application lifecycle, event types, provider interface and confi
 - `friday tools`: list enabled application tools and policies without an API key.
 - `friday talk --web`: opt in to the typed `search_web` function, with Tavily Basic Search as the default backend; bounded source excerpts and HTTPS links appear in the terminal. Optional Gemini Search grounding remains available by explicit configuration.
 - `friday web-search --query "..."`: make one explicit search without starting the microphone or Gemini Live session.
+- `friday weather --location "Brooklyn, New York" --day today`: check weather without opening the microphone or using Gemini/Tavily credits.
+- `friday talk`: a read-only `get_weather` function provides current conditions and today/tomorrow forecasts for a location explicitly named by the user, with Open-Meteo attribution.
 - `friday talk` and `friday live`: Gemini may call the narrowly allowlisted `get_local_time` function instead of guessing the current date or time.
 - Session state changes, idempotent shutdown, bounded event queue, basic session metrics, and automated tests.
 
-**Not yet implemented:** weather, reminders, wake word, always-on listening, persistent memory, arbitrary computer actions, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The currently available model-callable functions are the read-only local clock and opt-in web search. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
+**Not yet implemented:** reminders, wake word, always-on listening, persistent memory, arbitrary computer actions, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The currently available model-callable functions are the read-only clock, location-explicit weather, and opt-in web search. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
 
 ## Requirements
 
@@ -71,6 +73,32 @@ Press **Enter** to activate the microphone, speak, and press **Enter** again to 
 
 **Turn sequencing and playback (v0.3.1):** After stopping the microphone, wait for FRIDAY to finish her response. Another ordinary recording cannot begin until Gemini reports completion or interruption and the speaker buffer has drained. Extra Enter presses during playback are ignored; `/quit` remains available. A response stalls after 30 seconds without provider or actual playback progress and displays per-turn audio and event counters without logging raw audio; the configured overall session limit still applies. Long replies use bounded, lossless playback backpressure instead of discarding speech when Gemini sends audio faster than the speakers can play it. Gemini server-side VAD is disabled for `talk`; FRIDAY sends explicit activity start/end around captured PCM. The separate text `live` diagnostic still uses the default Gemini activity mode. This is still toggle-to-talk, not hands-free barge-in. Use headphones to minimize speaker-to-microphone echo; acoustic echo cancellation is not implemented.
 
+
+### Weather — today and tomorrow (v0.3.8)
+
+Weather uses Open-Meteo's geocoding and forecast APIs. No weather API key is
+required for qualifying non-commercial use; the service requires attribution.
+Read the [Open-Meteo terms](https://open-meteo.com/en/terms) before commercial
+deployment. Weather remains a separate read-only tool even when `--web` is off.
+
+```powershell
+py -m friday weather --location "Brooklyn, New York" --day today
+py -m friday weather --location "Brooklyn, New York" --day tomorrow
+py -m friday talk --input-device 1
+```
+
+In voice mode, ask “Friday, what's the weather in Brooklyn, New York today?”
+or “Will it rain in Brooklyn, New York tomorrow?” The location **must be
+supplied explicitly**; FRIDAY must ask if you say only “What's the weather
+here?” The clock is not a geographic location. Ambiguous geocoding returns
+possible locations instead of silently picking one. The forecast provides
+° F temperatures (rendered °F), mph wind, daily high/low, conditions and maximum
+daily precipitation probability (where supplied). Current conditions are shown
+only for today. Probabilities are forecasts, not promises; missing values
+are not fabricated. The app uses two fixed HTTPS endpoints, rejects redirects,
+bounds response sizes and rate-limits repeat requests after a 429. Weather
+queries are not saved; HTTP request URLs containing locations are suppressed
+from INFO logs. Data attribution: [Open-Meteo.com](https://open-meteo.com/en/docs).
 
 ### Local clock and tool foundation (v0.3.0)
 

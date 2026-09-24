@@ -117,3 +117,21 @@ are untrusted data and not a verified full-page crawl. No arbitrary URL fetch,
 browsing or computer action is added. A 429 closes the search gate for the rest
 of the session. Google Search grounding remains a separately configured legacy
 backend; no automatic fallback is made on Tavily errors.
+
+## v0.3.8 Open-Meteo weather
+
+`get_weather(location, day)` is explicitly registered for normal `talk`
+sessions, independently of `search_web`. Its strict Pydantic arguments accept
+a user-named city and today/tomorrow. It runs in a bounded worker thread so
+HTTP cannot block microphone/audio event processing; tool completion remains
+pending until spoken audio follows. The weather service makes bounded GETs
+only to the fixed Open-Meteo geocoding and forecast endpoints, does not follow
+redirects and never uses IP geolocation or saved user location. Ambiguous cities
+return choices; no forecast request occurs until location is resolved. The
+forecast request specifies the resolved location timezone and Fahrenheit/mph
+units, and outputs typed high/low, conditions, current values for today and
+precipitation probability if supplied. Missing values and upstream errors
+are explicit. HTTP request location URLs are not logged at INFO level.
+Attribution is included in tool results/terminal output, per CC BY 4.0.
+Open-Meteo free endpoint is for non-commercial use; commercial deployment
+requires checking the provider's licensing.
