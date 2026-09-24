@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from friday.audio.turns import VoiceTurns
 from friday.core.session import SessionManager
 from friday.providers.fake import FakeVoiceProvider
@@ -58,6 +60,11 @@ def test_two_microphone_turns_are_sent_before_end_signal():
             await mic.queue.put(b"\x01\x00")
             await mic.queue.put(b"\x02\x00")
             await turns.stop()
+            assert turns.awaiting_response
+            with pytest.raises(RuntimeError, match="still responding"):
+                await turns.start()
+            assert speaker.flushes == 1
+            turns.response_finished()
             await turns.start()
             await mic.queue.put(b"\x03\x00")
             await turns.stop()
