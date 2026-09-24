@@ -10,9 +10,10 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
+from friday.audio.devices import AudioDeviceError
 from friday.audio.turns import VoiceTurns
 from friday.core.events import EventKind, SessionState
-from friday.core.session import SessionManager
+from friday.core.session import SessionError, SessionManager
 from friday.voice_reminders import ReminderDraft, VoiceReminderApproval
 
 UiEvent = Callable[[str, Any], None]
@@ -56,11 +57,15 @@ class DesktopVoiceSession:
         self.user_chunks = 0
         self.audio_bytes = 0
         self.completions = 0
+        self._end_reason: str | None = None
+        self._quit_requested = False
 
     def request(self, command: str) -> None:
         """Must be called on the owning asyncio loop, not the Qt thread."""
         if command not in {"start", "stop", "approve", "reject", "quit"}:
             return
+        if command == "quit":
+            self._quit_requested = True
         if self.commands.full():
             if command != "quit":
                 return
@@ -123,6 +128,7 @@ class DesktopVoiceSession:
                     self._result(self.approval.finish_turn())
                 self.turn_finished.set()
             elif event.kind is EventKind.ERROR:
+                self._end_reason = "connection"
                 self.emit("error", event.text or "Voice provider error")
                 return False
             elif event.kind is EventKind.STATE and event.state is SessionState.CLOSED:
@@ -130,7 +136,9 @@ class DesktopVoiceSession:
         return False
 
     async def run(self) -> None:
+        """One explicit Live connection. Recovery never opens another paid session."""
         receiver: asyncio.Task[bool] | None = None
+        self._end_reason = None
         try:
             self.emit("status", "Connecting")
             # Do not make a paid connection if audio hardware cannot initialize.
@@ -141,27 +149,74 @@ class DesktopVoiceSession:
             self._pending()
             self.emit("status", "Ready")
             loop = asyncio.get_running_loop()
+            started = loop.time()
+            expires = started + self.max_seconds
+            warning = expires - min(30, max(1, self.max_seconds // 5))
+            warned = False
             deadline: float | None = None
             progress: tuple[int, int, int, int] | None = None
-            async with asyncio.timeout(self.max_seconds):
+            # An already-started spoken reply gets at most 30 seconds to finish
+            # after the normal limit; a new turn is never admitted after expiry.
+            async with asyncio.timeout(self.max_seconds + 30):
                 while True:
+                    now = loop.time()
+                    if self._quit_requested:
+                        break
+                    if not warned and now >= warning:
+                        warned = True
+                        self.emit(
+                            "notice",
+                            "Voice session nearing its time limit. "
+                            "Finish this turn; reconnect explicitly to continue.",
+                        )
+                    if now >= expires:
+                        if self.turns.recording:
+                            self.emit(
+                                "notice",
+                                "Session time limit reached while recording; "
+                                "microphone capture is being stopped.",
+                            )
+                        if not self.turns.awaiting_response:
+                            self._end_reason = "expired"
+                            self.emit("notice", "Voice session ended at its time limit.")
+                            break
+
+                    # Detect a microphone unplug or a failed audio sender even if
+                    # the user never clicks Stop. Poll while recording; the Qt UI
+                    # remains responsive and no audio data reaches the UI.
+                    self.turns.check_microphone()
+                    sender = self.turns.sender_task if self.turns.recording else None
                     command_task = asyncio.create_task(self.commands.get())
                     finished_task = (
                         asyncio.create_task(self.turn_finished.wait())
                         if self.turns.awaiting_response else None
                     )
-                    waiters = {command_task, receiver}
+                    waiters: set[asyncio.Task[Any]] = {command_task, receiver}
                     if finished_task is not None:
                         waiters.add(finished_task)
+                    if sender is not None:
+                        waiters.add(sender)
+                    tick = (
+                        0.2 if self.turns.recording or self.turns.awaiting_response
+                        else min(5.0, max(0.0, (expires if warned else warning) - now))
+                    )
                     try:
                         done, _ = await asyncio.wait(
-                            waiters,
-                            timeout=0.2 if self.turns.awaiting_response else None,
-                            return_when=asyncio.FIRST_COMPLETED,
+                            waiters, timeout=tick, return_when=asyncio.FIRST_COMPLETED
                         )
                         if receiver in done:
-                            if not receiver.result():
-                                self.emit("status", "Connection failed")
+                            if not self._quit_requested:
+                                self._end_reason = "connection"
+                                if not receiver.result():
+                                    self.emit("status", "Connection failed")
+                                else:
+                                    self.emit(
+                                        "notice",
+                                        "Voice connection ended unexpectedly. "
+                                        "Reconnect explicitly to continue.",
+                                    )
+                            break
+                        if command_task in done and command_task.result() == "quit":
                             break
                         if finished_task is not None and finished_task in done:
                             if not await self.speaker.wait_until_drained(timeout=5.0):
@@ -170,15 +225,17 @@ class DesktopVoiceSession:
                             self.turns.response_finished()
                             self.turn_finished.clear()
                             deadline = None
+                            if loop.time() >= expires:
+                                self._end_reason = "expired"
+                                self.emit("notice", "Voice session ended at its time limit.")
+                                break
                             self.emit("status", "Ready")
                             self._pending()
                         if command_task in done:
                             command = command_task.result()
-                            if command == "quit":
-                                break
                             if command == "start" and not self.turns.recording and (
                                 not self.turns.awaiting_response
-                            ):
+                            ) and loop.time() < expires:
                                 self.turn_finished.clear()
                                 self.user_chunks = 0
                                 self.audio_bytes = 0
@@ -195,11 +252,15 @@ class DesktopVoiceSession:
                             elif command in {"approve", "reject"} and (
                                 self.approval is not None and not self.turns.recording
                                 and not self.turns.awaiting_response
-                            ):
+                            ) and loop.time() < expires:
                                 self._result(
                                     self.approval.approve() if command == "approve"
                                     else self.approval.reject()
                                 )
+                        if sender is not None and sender in done and self.turns.recording:
+                            # Raises the original SessionError if sending failed.
+                            sender.result()
+                            raise AudioDeviceError("Microphone capture ended unexpectedly")
                         if self.turns.awaiting_response and deadline is not None:
                             current = (
                                 self.user_chunks, self.audio_bytes,
@@ -209,6 +270,7 @@ class DesktopVoiceSession:
                                 progress = current
                                 deadline = loop.time() + 30.0
                             elif loop.time() >= deadline:
+                                self._end_reason = "connection"
                                 self.emit("error", "Voice response stalled for 30 seconds.")
                                 break
                     finally:
@@ -220,18 +282,44 @@ class DesktopVoiceSession:
                                 task.cancel()
                         await asyncio.gather(*pending_tasks, return_exceptions=True)
         except TimeoutError:
-            self.emit("notice", "Session time limit reached. Reconnect to continue.")
+            if not self._quit_requested:
+                self._end_reason = "expired"
+                self.emit("notice", "Voice session time limit reached; reconnect to continue.")
+        except AudioDeviceError:
+            if not self._quit_requested:
+                self._end_reason = "audio"
+                self.emit(
+                    "error",
+                    "Audio device unavailable. Check microphone/speaker connection "
+                    "and Windows permissions, then reconnect.",
+                )
+        except SessionError:
+            if not self._quit_requested:
+                self._end_reason = "connection"
+                self.emit("error", "Voice connection interrupted. Reconnect to continue.")
         finally:
             self.emit("status", "Disconnecting")
             try:
                 await self.turns.close()
-            finally:
+            except AudioDeviceError:
+                if not self._quit_requested:
+                    self._end_reason = self._end_reason or "audio"
+                    self.emit("notice", "Audio device reported a shutdown problem.")
+            try:
                 if receiver is not None:
                     receiver.cancel()
                     await asyncio.gather(receiver, return_exceptions=True)
+                await self.manager.close()
+            finally:
                 try:
-                    await self.manager.close()
-                finally:
                     self.speaker.close()
-            self.emit("draft", None)
-            self.emit("status", "Disconnected")
+                except AudioDeviceError:
+                    if not self._quit_requested:
+                        self._end_reason = self._end_reason or "audio"
+                        self.emit("notice", "Speaker could not close normally.")
+                finally:
+                    # Never carry a pending model-proposed action into a fresh session.
+                    self.emit("draft", None)
+                    if self._end_reason is not None and not self._quit_requested:
+                        self.emit("recovery", self._end_reason)
+                    self.emit("status", "Disconnected")
