@@ -21,22 +21,22 @@ The initial harness event queue is bounded and single-consumer. Audio input has 
 
 ## Provider contract
 
-`connect`, `send_text`, `send_audio`, `end_input`, `events`, `close`.
+`connect`, `send_text`, `send_audio`, `start_activity`, `end_activity`, `end_input`, `events`, `close`.
 A local provider may implement audio input using offline STT and output using offline TTS. No external provider-specific objects cross this boundary.
 
 ## Gemini notes
 
-The adapter uses the supported `client.aio.live.connect()` and `send_realtime_input()` methods, receives transcript and raw audio events, and re-enters `session.receive()` between turns. It does not implement session resumption, VAD configuration, tool calls or speaker playback. Those are separate milestones.
+The adapter uses `client.aio.live.connect()` and `send_realtime_input()`, receives transcript and raw audio events, and re-enters `session.receive()` between turns. `talk` uses explicit activity-start/end and disabled automatic activity detection. Live function calls are answered in the provider adapter through `send_tool_response()`; no model SDK types cross into the core.
 
 ## Security boundaries
 
-The model has no authority over filesystem, shell, browser, email or OS actions in v0.1. Future tools must use a separate typed registry with authorization, logging and explicit result handling. Never trust a tool request just because it originated from the model. No secrets or raw audio should enter logs.
+The model has no authority over filesystem, shell, browser, email or OS actions. The sole model-callable capability is the read-only computer local clock. A strict function-name allowlist and empty argument check reject unexpected requests. No secrets or raw audio should enter logs.
 
 ## Voice interaction (v0.2)
 
-`talk` creates a single speaker event consumer, a microphone sender, and a terminal command reader. Each blank Enter toggles between capture and paused state. `Microphone.stop()` appends an EOF marker after queued frames; `VoiceTurns.stop()` waits for the sender to drain before calling provider-neutral `end_input()`, which Gemini maps to `audio_stream_end=True` with server VAD enabled. Gemini can resume receiving audio for a later turn.
+`talk` creates a single speaker event consumer, a microphone sender, and a terminal command reader. Each blank Enter toggles between capture and paused state. `Microphone.stop()` appends an EOF marker after queued frames; `VoiceTurns.stop()` waits for the sender to drain before calling provider-neutral `end_activity()`, which Gemini maps to an explicit activity-end signal. Gemini can resume receiving audio for a later turn.
 
-The microphone callback transfers raw bytes to the asyncio loop; the model/network are never called from an audio callback. The speaker's PortAudio callback reads a lock-protected, bounded PCM buffer, pads with silence when empty, and discards pending audio on interruption. The terminal reader is daemonized so a failed network session cannot permanently strand an input thread. No tool execution is enabled.
+The microphone callback transfers raw bytes to the asyncio loop; the model/network are never called from an audio callback. The speaker's PortAudio callback reads a lock-protected, bounded PCM buffer, pads with silence when empty, and discards pending audio on interruption. The terminal reader is daemonized so a failed network session cannot permanently strand an input thread. Only the read-only clock capability is enabled.
 
 
 ## v0.2.3 local clock function
