@@ -76,6 +76,15 @@ Press **Enter** to activate the microphone, speak, and press **Enter** again to 
 
 ### Voice reminder management — opt-in (v0.4.2)
 
+**Voice language (v0.4.3):** FRIDAY is instructed to reply in American English
+by default, including when automatic transcription mistakes a short utterance
+for Spanish. She should request clarification in English if needed, and change
+response language only on an explicit request. Gemini Live audio transcription
+can still occasionally mishear or label user speech; the response instruction
+does not force the input transcript language or override the provider's native
+audio language detection.
+
+
 Start the independent scheduler with Google Calendar sync in one terminal:
 
 ```powershell
