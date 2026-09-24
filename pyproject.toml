@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "friday-assistant"
+version = "0.1.0"
+description = "Harness-first personal voice assistant foundation"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Tobias Arevalo" }]
+dependencies = [
+  "pydantic-settings>=2.5,<3",
+]
+
+[project.optional-dependencies]
+gemini = ["google-genai>=1.30,<3"]
+dev = ["pytest>=8,<10", "ruff>=0.9,<1"]
+
+[project.scripts]
+friday = "friday.ui.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
