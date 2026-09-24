@@ -76,3 +76,15 @@ interruption and shutdown may still discard unplayed audio. The existing lossy
 used by `friday talk`. The response idle watchdog observes provider progress
 and actual played PCM bytes, so a longer answer does not time out simply because
 playback is paced; the overall session cap remains in force.
+
+## v0.3.2 Google Search grounding
+
+Native Google Search is separate from the application-owned ToolRegistry, enabled
+only by explicit `talk --web`. Live search and `get_local_time` are provided as
+separate Gemini tool entries. When the SDK reports grounding metadata, FRIDAY
+normalizes HTTPS source URLs and vendor Search Suggestions into a provider-neutral
+GROUNDING event. The terminal displays sources with the current answer, and
+Google's suggestion markup is shown in a sandboxed browser frame in a temporary
+local file removed at session shutdown. No web pages are fetched or indexed by
+FRIDAY; grounded content does not become a computer-action instruction. Source
+links are not claimed when the provider supplies no usable grounding metadata.

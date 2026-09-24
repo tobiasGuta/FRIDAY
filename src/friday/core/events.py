@@ -11,6 +11,7 @@ class EventKind(StrEnum):
     TURN_COMPLETE = "turn_complete"
     INTERRUPTED = "interrupted"
     NOTICE = "notice"
+    GROUNDING = "grounding"
     ERROR = "error"
 
 
@@ -23,6 +24,12 @@ class SessionState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class SearchSource:
+    title: str
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
 class VoiceEvent:
     kind: EventKind
     text: str | None = None
@@ -30,6 +37,8 @@ class VoiceEvent:
     audio: bytes | None = None
     sample_rate: int | None = None
     state: SessionState | None = None
+    sources: tuple[SearchSource, ...] = ()
+    search_suggestions_html: str | None = None
 
     def __repr__(self) -> str:
         # Audio contents are deliberately not included in event repr/logs.
@@ -37,5 +46,7 @@ class VoiceEvent:
         return (
             f"VoiceEvent(kind={self.kind!r}, text={self.text!r}, "
             f"speaker={self.speaker!r}, audio={audio_info}, "
-            f"sample_rate={self.sample_rate!r}, state={self.state!r})"
+            f"sample_rate={self.sample_rate!r}, state={self.state!r}, "
+            f"source_count={len(self.sources)}, "
+            f"has_search_suggestions={self.search_suggestions_html is not None})"
         )

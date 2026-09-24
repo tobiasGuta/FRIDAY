@@ -41,6 +41,13 @@
 
 - Live web search (proposed v0.3.2), then weather and timers/reminders one at a time.
 
+## v0.3.2 — Live web search (implemented; Windows live acceptance pending)
+
+- Search opt-in `talk --web`, combined with clock function declarations.
+- Print supplied grounding source links and show native Google Search Suggestions in a disposable browser preview.
+- Test missing or malformed grounding metadata, safe link display, and no-search defaults.
+- Next Phase 1 slices: weather, timers and reminders.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2 — Opt-in Google Search grounding
+
+- Add `talk --web` as explicit opt-in for Google Search in the Gemini Live session.
+- Combine native `google_search` with the existing, allowlisted local clock function.
+- Display only Google-provided HTTPS source references; never invent a citation.
+- Present Google Search Suggestions in a temporary sandboxed browser preview when supplied.
+- Remove preview files when the voice session ends; do not build a search-history database.
+- Keep the old talk command, clock integration, and push-to-talk prompt unchanged.
+- Test opt-in configuration, grounding extraction, rendering, source isolation, and old defaults offline.
+
+
 ## 0.3.1 — Long-speech playback reliability
 
 - Preserve all normal Live PCM speech in arrival order by waiting for speaker capacity instead of dropping oldest audio after four seconds of backlog.

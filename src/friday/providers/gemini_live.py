@@ -8,6 +8,7 @@ from friday.config import Settings
 from friday.core.events import EventKind, VoiceEvent
 from friday.core.provider import ProviderCapabilityError
 from friday.tools.builtins import build_builtin_registry
+from friday.tools.search_grounding import extract_search_grounding
 
 FRIDAY_INSTRUCTION = (
     "You are FRIDAY, Tobias's personal AI assistant. Speak naturally and concisely. "
@@ -19,12 +20,23 @@ FRIDAY_INSTRUCTION = (
 )
 
 
+WEB_SEARCH_INSTRUCTION = (
+    " For recent or changing facts, use Google Search when available. If grounding "
+    "does not provide usable sources, say that you could not verify the information "
+    "instead of making up citations. Speak concisely; references appear separately "
+    "in the FRIDAY terminal. Do not claim that search ran unless it actually did."
+)
+
+
 def normalize_gemini_message(
     message: Any, *, output_sample_rate: int = 24000
 ) -> abc.Iterator[VoiceEvent]:
     """Map SDK responses to core events without requiring the SDK during unit tests."""
     content = getattr(message, "server_content", None)
     if content is not None:
+        grounding = extract_search_grounding(content)
+        if grounding is not None:
+            yield grounding
         incoming = getattr(content, "input_transcription", None)
         if incoming is not None and getattr(incoming, "text", None):
             yield VoiceEvent(EventKind.TRANSCRIPT, text=incoming.text, speaker="user")
@@ -59,10 +71,12 @@ class GeminiLiveProvider:
         *,
         manual_activity: bool = False,
         enable_local_clock: bool = False,
+        enable_web_search: bool = False,
     ) -> None:
         self.settings = settings
         self._manual_activity = manual_activity
         self._tool_registry = build_builtin_registry(enable_local_clock=enable_local_clock)
+        self._enable_web_search = enable_web_search
         self._activity_open = False
         self._client: Any = None
         self._context: Any = None
@@ -80,9 +94,18 @@ class GeminiLiveProvider:
             raise RuntimeError("Install Gemini support: pip install -e '.[gemini]'") from exc
 
         self._client = genai.Client(api_key=key)
+        declarations = self._tool_registry.declarations()
+        tools = []
+        if self._enable_web_search:
+            tools.append({"google_search": {}})
+        if declarations:
+            tools.append({"function_declarations": declarations})
         config = types.LiveConnectConfig(
             response_modalities=[types.Modality.AUDIO],
-            system_instruction=FRIDAY_INSTRUCTION,
+            system_instruction=(
+                FRIDAY_INSTRUCTION
+                + (WEB_SEARCH_INSTRUCTION if self._enable_web_search else "")
+            ),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.settings.voice)
@@ -90,11 +113,7 @@ class GeminiLiveProvider:
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
-            **(
-                {"tools": [{"function_declarations": self._tool_registry.declarations()}]}
-                if self._tool_registry.declarations()
-                else {}
-            ),
+            **({"tools": tools} if tools else {}),
             **(
                 {
                     "realtime_input_config": types.RealtimeInputConfig(

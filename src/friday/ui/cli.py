@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import logging
+import tempfile
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,12 +12,13 @@ from friday import __version__
 from friday.audio.devices import AudioDeviceError, Microphone, Speaker, list_audio_devices
 from friday.audio.turns import VoiceTurns
 from friday.config import Settings
-from friday.core.events import EventKind, SessionState, VoiceEvent
+from friday.core.events import EventKind, SearchSource, SessionState, VoiceEvent
 from friday.core.session import SessionError, SessionManager
 from friday.providers.fake import FakeVoiceProvider
 from friday.providers.gemini_live import GeminiLiveProvider
 from friday.tools.builtins import build_builtin_registry
 from friday.tools.local_clock import read_local_clock
+from friday.tools.search_grounding import SearchPreview
 from friday.ui.terminal import TerminalCommands
 
 
@@ -117,23 +119,63 @@ async def _voice_events(
     speaker: Speaker,
     turn_finished: asyncio.Event | None = None,
     diagnostics: VoiceTurnDiagnostics | None = None,
+    search_preview: SearchPreview | None = None,
 ) -> bool:
-    """Single consumer: play PCM and print transcripts; return False on provider failure."""
+    """Single consumer: play PCM, display supplied sources, and track turn state."""
+    sources: dict[str, SearchSource] = {}
+    suggestions: str | None = None
+    answer_parts: list[str] = []
     async for event in manager.events():
         if event.kind is EventKind.AUDIO:
             await speaker.enqueue_wait(event.audio or b"", sample_rate=event.sample_rate or 0)
             if diagnostics is not None:
                 diagnostics.assistant_audio_bytes += len(event.audio or b"")
+        elif event.kind is EventKind.GROUNDING:
+            for source in event.sources:
+                if len(sources) < 10:
+                    sources.setdefault(source.url, source)
+            if event.search_suggestions_html:
+                suggestions = event.search_suggestions_html
         elif event.kind is EventKind.TRANSCRIPT:
             if diagnostics is not None and event.speaker == "user":
                 diagnostics.user_transcript_chunks += 1
+            if event.speaker == "assistant" and event.text:
+                answer_parts.append(event.text)
             _display(event)
         elif event.kind is EventKind.INTERRUPTED:
             speaker.flush()
+            sources.clear()
+            suggestions = None
+            answer_parts.clear()
             _display(event)
         else:
             _display(event)
         if event.kind is EventKind.TURN_COMPLETE:
+            if sources or suggestions:
+                print("Google Search grounding returned:")
+                if sources:
+                    for index, source in enumerate(sources.values(), 1):
+                        print(f"  [{index}] {source.title} — {source.url}")
+                else:
+                    print("  No usable source URLs were provided for this answer.")
+                if suggestions and search_preview is not None:
+                    try:
+                        opened = await asyncio.to_thread(
+                            search_preview.show,
+                            "".join(answer_parts),
+                            tuple(sources.values()),
+                            suggestions,
+                        )
+                    except OSError:
+                        opened = False
+                    print(
+                        "Google Search suggestions opened in your browser."
+                        if opened else
+                        "WARNING: Could not open Google Search suggestions in a browser."
+                    )
+            sources.clear()
+            suggestions = None
+            answer_parts.clear()
             print("FRIDAY turn complete")
         if event.kind in {EventKind.TURN_COMPLETE, EventKind.INTERRUPTED}:
             if diagnostics is not None:
@@ -224,25 +266,40 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
     )
     speaker = Speaker(sample_rate=settings.output_sample_rate, device=args.output_device)
     manager = SessionManager(
-        GeminiLiveProvider(settings, manual_activity=True, enable_local_clock=True),
-        queue_size=settings.event_queue_size
+        GeminiLiveProvider(
+            settings,
+            manual_activity=True,
+            enable_local_clock=True,
+            enable_web_search=args.web,
+        ),
+        queue_size=settings.event_queue_size,
     )
     commands = TerminalCommands()
     turns = VoiceTurns(manager, mic, speaker)
     receiver: asyncio.Task[bool] | None = None
     turn_finished = asyncio.Event()
     diagnostics = VoiceTurnDiagnostics()
+    preview_directory = (
+        tempfile.TemporaryDirectory(prefix="friday-grounding-") if args.web else None
+    )
+    search_preview = (
+        SearchPreview(Path(preview_directory.name)) if preview_directory is not None else None
+    )
     try:
         # If hardware initialization fails, do not open the paid provider connection.
         speaker.start()
         await manager.start()
         receiver = asyncio.create_task(
-            _voice_events(manager, speaker, turn_finished, diagnostics),
+            _voice_events(
+                manager, speaker, turn_finished, diagnostics, search_preview=search_preview
+            ),
             name="friday-speaker-events"
         )
         commands.start()
         print("FRIDAY is connected. Use headphones to avoid microphone/speaker feedback.")
         print("Press ENTER to start speaking, then ENTER again to stop. Type /quit to exit.")
+        if args.web:
+            print("Google Search is enabled for this session; usage may be billed separately.")
         async with asyncio.timeout(args.max_seconds or settings.max_session_seconds):
             while True:
                 if turns.awaiting_response:
@@ -308,6 +365,8 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
                 await asyncio.gather(receiver, return_exceptions=True)
             await manager.close()
             speaker.close()
+            if preview_directory is not None:
+                preview_directory.cleanup()
         if mic.dropped_chunks:
             print(f"Microphone overload: {mic.dropped_chunks} chunks dropped")
         if speaker.dropped_bytes:
@@ -317,7 +376,7 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="friday", description="FRIDAY voice assistant v0.2")
+    parser = argparse.ArgumentParser(prog="friday", description="FRIDAY voice assistant")
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor", help="Show safe configuration diagnostics")
@@ -334,6 +393,10 @@ def build_parser() -> argparse.ArgumentParser:
     talk.add_argument("--input-device", type=int, help="Optional PortAudio input device index")
     talk.add_argument("--output-device", type=int, help="Optional PortAudio output device index")
     talk.add_argument("--max-seconds", type=int, help="Override session duration limit")
+    talk.add_argument(
+        "--web", action="store_true",
+        help="Opt in to Google Search grounding, source links and temporary browser suggestions",
+    )
     return parser
 
 

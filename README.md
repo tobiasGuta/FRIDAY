@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.3.1 preserves long spoken answers without dropping buffered audio.**
+A harness-first personal AI assistant. **v0.3.2 adds opt-in live Google Search grounding to the stable voice assistant.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.3.1)
+## What works today (v0.3.2)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -14,11 +14,12 @@ FRIDAY owns the application lifecycle, event types, provider interface and confi
 - `friday talk`: opt-in live 16 kHz microphone input and 24 kHz speaker output with Enter-to-talk/Enter-to-stop, transcripts, and interruption playback flush.
 - `friday devices`: list available PortAudio microphone and speaker device indices.
 - `friday clock`: read your computer's local date, time, and configured timezone entirely offline.
-- `friday tools`: list enabled capabilities and policies without an API key.
+- `friday tools`: list enabled application tools and policies without an API key.
+- `friday talk --web`: opt in to Gemini Live Google Search grounding with provider-supplied source URLs and a temporary browser preview of Google Search suggestions.
 - `friday talk` and `friday live`: Gemini may call the narrowly allowlisted `get_local_time` function instead of guessing the current date or time.
 - Session state changes, idempotent shutdown, bounded event queue, basic session metrics, and automated tests.
 
-**Not yet implemented:** live web search, weather, reminders, wake word, always-on listening, persistent memory, arbitrary computer actions, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The only model-callable function is the read-only local clock. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
+**Not yet implemented:** weather, reminders, wake word, always-on listening, persistent memory, arbitrary computer actions, desktop UI, local inference, session resumption, or hardware-independent echo cancellation. The only model-callable function is the read-only local clock. The `live` diagnostic still writes WAV only; use `talk` to hear FRIDAY automatically.
 
 ## Requirements
 
@@ -91,6 +92,30 @@ session. The terminal prompt and Enter-to-talk interaction are unchanged.
 If the sounddevice/PortAudio backend cannot open a device, FRIDAY reports a local audio error and cleans up rather than silently accessing the wrong device. If Gemini sends an interruption event, pending playback is cleared; pressing Enter for a new turn also clears it. This is a push-to-talk **toggle**, not a hold-to-talk keyboard shortcut.
 
 **Validation boundary:** Offline automated tests cover fake audio device callbacks, PCM framing, buffer limits, two-turn delivery, interruption flush, and cleanup. They do not prove that an individual Windows microphone, sound driver, or Gemini account works; test with real hardware and your own key. The `talk` command uses API quota. No local raw recordings are persisted by default.
+
+### Opt-in live Google Search (v0.3.2)
+
+Google Search is **off by default** so ordinary conversations do not unexpectedly
+trigger search-grounding usage. To enable it for one voice session:
+
+```powershell
+py -m friday talk --input-device 1 --web
+```
+
+Try “Friday, search the web for the latest Python release and tell me the date.”
+Gemini chooses whether to use search; enabling it does not guarantee a search or
+that every claim has a source. FRIDAY displays only source URLs actually supplied
+in the Live grounding metadata. If Google supplies Search Suggestions markup,
+FRIDAY opens a temporary local page in your default browser with her transcribed
+answer, source links, and Google's own suggestion widget in a sandboxed frame.
+The temporary page is removed when the voice session exits; don't rely on it as
+persistent history. Use a browser that supports local HTML previews to see the
+suggestions. FRIDAY never executes source-page content, fetches links on her own,
+or treats website content as an instruction to control your computer. Search may
+have distinct quota/billing implications; check the Google AI Studio project.
+The standalone `friday tools` command lists FRIDAY-owned functions and does not
+list provider-native Google Search, which is opted into separately with `--web`.
+The normal command and the `FRIDAY [Enter: talk/stop, /quit]:` prompt are unchanged.
 
 ## Architecture
 
