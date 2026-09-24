@@ -93,7 +93,9 @@ async def _live(args: argparse.Namespace, settings: Settings) -> int:
         await manager.close()
 
 
-async def _voice_events(manager: SessionManager, speaker: Speaker) -> bool:
+async def _voice_events(
+    manager: SessionManager, speaker: Speaker, turn_finished: asyncio.Event | None = None
+) -> bool:
     """Single consumer: play PCM and print transcripts; return False on provider failure."""
     async for event in manager.events():
         if event.kind is EventKind.AUDIO:
@@ -103,11 +105,56 @@ async def _voice_events(manager: SessionManager, speaker: Speaker) -> bool:
             _display(event)
         else:
             _display(event)
+        if event.kind in {EventKind.TURN_COMPLETE, EventKind.INTERRUPTED}:
+            if turn_finished is not None:
+                turn_finished.set()
         if event.kind is EventKind.ERROR:
             return False
         if event.kind is EventKind.STATE and event.state is SessionState.CLOSED:
             return True
     return False
+
+
+async def _await_voice_response(
+    commands: TerminalCommands,
+    receiver: asyncio.Task[bool],
+    turn_finished: asyncio.Event,
+    speaker: Speaker,
+    *,
+    timeout: float = 30.0,
+) -> str:
+    """Block new turns while permitting /quit and bounding an unresponsive provider."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        command_task = asyncio.create_task(commands.next())
+        finish_task = asyncio.create_task(turn_finished.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {command_task, finish_task, receiver},
+                timeout=max(0.0, deadline - loop.time()),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if receiver in done:
+                return "closed" if receiver.result() else "failed"
+            if command_task in done:
+                command = command_task.result().strip().lower()
+                if command in {"/quit", "/exit"}:
+                    return "quit"
+            if finish_task in done:
+                if not await speaker.wait_until_drained(timeout=5.0):
+                    speaker.flush()
+                    print("WARNING: speaker buffer did not drain; discarded pending audio")
+                commands.discard_pending_empty()
+                return "ready"
+            if not done:
+                return "timeout"
+            print("FRIDAY is responding. Wait for her to finish or type /quit.")
+        finally:
+            for task in (command_task, finish_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(command_task, finish_task, return_exceptions=True)
 
 
 async def _talk(args: argparse.Namespace, settings: Settings) -> int:
@@ -122,18 +169,34 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
     commands = TerminalCommands()
     turns = VoiceTurns(manager, mic, speaker)
     receiver: asyncio.Task[bool] | None = None
+    turn_finished = asyncio.Event()
     try:
         # If hardware initialization fails, do not open the paid provider connection.
         speaker.start()
         await manager.start()
         receiver = asyncio.create_task(
-            _voice_events(manager, speaker), name="friday-speaker-events"
+            _voice_events(manager, speaker, turn_finished), name="friday-speaker-events"
         )
         commands.start()
         print("FRIDAY is connected. Use headphones to avoid microphone/speaker feedback.")
         print("Press ENTER to start speaking, then ENTER again to stop. Type /quit to exit.")
         async with asyncio.timeout(args.max_seconds or settings.max_session_seconds):
             while True:
+                if turns.awaiting_response:
+                    result = await _await_voice_response(
+                        commands, receiver, turn_finished, speaker
+                    )
+                    if result == "quit":
+                        break
+                    if result == "timeout":
+                        print("FRIDAY did not complete the response within 30 seconds.")
+                        return 1
+                    if result in {"failed", "closed"}:
+                        return 0 if result == "closed" else 1
+                    turns.response_finished()
+                    turn_finished.clear()
+                    print("FRIDAY is ready. Press Enter to speak.")
+                    continue
                 command_task = asyncio.create_task(commands.next())
                 done, _ = await asyncio.wait(
                     {command_task, receiver}, return_when=asyncio.FIRST_COMPLETED
@@ -149,6 +212,7 @@ async def _talk(args: argparse.Namespace, settings: Settings) -> int:
                     print("Unknown command; press Enter to toggle the microphone or type /quit.")
                     continue
                 if turns.recording:
+                    turn_finished.clear()
                     await turns.stop()
                     print("Microphone paused. FRIDAY is responding...")
                 else:
