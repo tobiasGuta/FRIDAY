@@ -21,6 +21,19 @@ QFrame#hero {
     background-color: #152D4E; border: 1px solid #3E72AE;
     border-radius: 18px;
 }
+QFrame#homeVoiceHero {
+    background-color: #102949; border: 1px solid #376FA8;
+    border-radius: 18px;
+}
+QFrame#summaryRow {
+    background-color: #0D2036; border: 1px solid #2E4C6C;
+    border-radius: 11px;
+}
+QLabel#eyebrow {
+    color: #81C9EA; font-size: 11px; letter-spacing: 2px; font-weight: bold;
+}
+QLabel#itemTitle { color: #F3F9FF; font-size: 14px; font-weight: bold; }
+QLabel#summaryBadge { color: #9EDACC; font-size: 11px; font-weight: bold; }
 QFrame#voiceStage {
     background-color: #102443; border: 1px solid #305A8B;
     border-radius: 22px;
