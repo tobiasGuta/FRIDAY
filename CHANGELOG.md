@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.5 — Hybrid desktop shell (Slice 1; Windows visual acceptance pending)
+## 0.5.5 — Hybrid desktop shell (Slices 1–2; Windows Slice 2 acceptance pending)
 
 - Introduce six navigable PySide6 Widgets pages: Home, Voice, Academic,
   Reminders, Calendar, Settings, with a new dark dashboard style and live
@@ -11,6 +11,11 @@
 - Mirror local cached coursework and current-session transcript on Home
   without retrieving Brightspace at startup, storing conversation history,
   or starting a microphone / Gemini session.
+- Polish Home with a second decorative state-driven orb, actual upcoming
+  academic item cards and original due-label distinctions, a bounded read-only
+  local reminder preview, scheduler status, safe quick navigation/manual sync,
+  and narrow-window stacked columns. The canonical voice and approval
+  controls remain on their own page; the UI adds no fictional actions.
 - Preserve protected feed credential storage, read-only calendar semantics,
   opt-in Google publishing, local scheduler ownership, and quit/tray lifecycle.
 - Add headless navigation, approval, offline cache, state-mirroring, and
