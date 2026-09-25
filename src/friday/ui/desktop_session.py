@@ -57,6 +57,7 @@ class DesktopVoiceSession:
         self.turn_finished = asyncio.Event()
         self.user_chunks = 0
         self.audio_bytes = 0
+        self.played_at_turn_start = 0
         self.completions = 0
         self.generation_completions = 0
         self.assistant_chunks = 0
@@ -248,6 +249,7 @@ class DesktopVoiceSession:
                                 self.turn_finished.clear()
                                 self.user_chunks = 0
                                 self.audio_bytes = 0
+                                self.played_at_turn_start = self.speaker.played_bytes
                                 self.completions = 0
                                 self.generation_completions = 0
                                 self.assistant_chunks = 0
@@ -293,7 +295,8 @@ class DesktopVoiceSession:
                                     f"generation_complete={bool(self.generation_completions)}; "
                                     f"turn_complete={bool(self.completions)}; "
                                     f"assistant_text={bool(self.assistant_chunks)}; "
-                                    f"audio_received={bool(self.audio_bytes)}.",
+                                    f"audio_received={bool(self.audio_bytes)}; "
+                                    f"audio_callback={self.speaker.played_bytes > self.played_at_turn_start}.",
                                 )
                                 self.emit(
                                     "error",
