@@ -99,3 +99,44 @@ def test_projects_accessible_from_focus_without_turning_on_microphone(tmp_path):
     finally:
         window._tray = None
         window.close()
+
+
+def test_voice_proposal_is_visible_but_cannot_launch_without_host_click(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    catalog = ProjectCatalog(tmp_path / "projects.json")
+    folder = tmp_path / "FutureProject"
+    folder.mkdir()
+    project = catalog.add_project(folder)
+    window = DesktopWindow(project_catalog=catalog)
+
+    class FakeWorker:
+        def __init__(self):
+            self.commands = []
+
+        def request(self, command):
+            self.commands.append(command)
+
+    fake = FakeWorker()
+    try:
+        window.show()
+        app.processEvents()
+        window._on_event("status", "Ready")
+        window._on_event("project_draft", {
+            "id": project.id, "name": project.name,
+            "path": str(project.path), "application": "terminal",
+        })
+        assert window.project_approval_panel.isVisibleTo(window)
+        assert window.project_approve_button.isEnabled()
+        assert "Windows Terminal" in window.project_draft_description.text()
+        assert window._worker is None  # No worker or OS launch from a UI event.
+        window._worker = fake
+        window.project_approve_button.click()
+        assert fake.commands == ["project_approve"]
+        window._on_event("project_result", {"status": "rejected"})
+        window._on_event("project_draft", None)
+        assert window._project_draft is None
+        assert not window.project_approval_panel.isVisibleTo(window)
+    finally:
+        window._worker = None
+        window._tray = None
+        window.close()
