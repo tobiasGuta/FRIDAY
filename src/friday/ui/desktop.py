@@ -865,7 +865,7 @@ class DesktopWindow(QMainWindow):
         self.mic_button.clicked.connect(self._toggle_microphone)
         voice.addWidget(self.mic_button)
         voice.addWidget(self._plain_label(
-            "Connect or disconnect from the top bar. Recording only starts when you click."
+            "Connection and recording remain manual; no wake word or auto-reconnect."
         ))
         voice.addStretch(1)
 
