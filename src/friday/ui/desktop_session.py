@@ -296,7 +296,8 @@ class DesktopVoiceSession:
                                     f"turn_complete={bool(self.completions)}; "
                                     f"assistant_text={bool(self.assistant_chunks)}; "
                                     f"audio_received={bool(self.audio_bytes)}; "
-                                    f"audio_callback={self.speaker.played_bytes > self.played_at_turn_start}.",
+                                    "audio_callback="
+                                    f"{self.speaker.played_bytes > self.played_at_turn_start}.",
                                 )
                                 self.emit(
                                     "error",
