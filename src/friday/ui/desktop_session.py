@@ -119,6 +119,10 @@ class DesktopVoiceSession:
                 # Generation completion does NOT unlock the microphone; only
                 # the server's final TURN_COMPLETE or INTERRUPTED signal can.
                 self.generation_completions += 1
+            elif event.kind is EventKind.CONTEXT:
+                # A fixed presentation hint, not the model's untrusted prose.
+                if event.context_kind in {"academic", "reminders"}:
+                    self.emit("context", event.context_kind)
             elif event.kind is EventKind.NOTICE:
                 self.emit("notice", event.text or "")
                 self._pending()
