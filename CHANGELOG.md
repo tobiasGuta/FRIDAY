@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.5.7 — Hologram Lab, Slice 1 (experimental; Windows acceptance pending)
+## 0.5.7 — Hologram Lab, Slice 1 + optional Slice 2A (experimental; Windows acceptance pending)
+
+- Slice 2A: add an independent, off-by-default floating energy particle layer
+  in the experimental renderer: 18 sparse deterministic golden points with
+  restrained shimmer/drift, state-driven brightness and no offline particles.
+- Disable and clear the particle switch when Classic is selected; no changes
+  to the accepted Classic paint path, Live/audio/scheduler/network/approval
+  services, or existing no-persistence behavior.
+- Circuit fragments and light trails are expressly deferred. Headless rendering
+  and no-new-session toggle regression checks accompany this experimental branch.
 
 - Add optional multi-plane amber orbital renderer with an animated energy core,
   existing state-driven animation and restrained outer circuit ticks.
@@ -10,7 +19,7 @@
 - Keep the animation idle when hidden or disconnected. No microphone amplitude,
   real audio waveform, QML/GL shaders, new API calls, or persistent preference.
 - Include Qt rendering tests and fake/no-worker UI regressions. Tiny orbiting
-  particles and more extensive state choreography remain later slices.
+  circuit fragments, trails and more extensive state choreography remain later slices.
 
 ## 0.5.6 — Voice Focus Mode (merged; Windows user acceptance reported)
 
