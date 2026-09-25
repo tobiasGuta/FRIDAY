@@ -140,8 +140,11 @@
   source-backed academic/reminder cards; read-only SQLite preview (no new
   database or startup network), live scheduler summaries and canonical manual
   sync navigation. Windows visual acceptance pending.
-- **Slice 3:** state-driven cinematic orb and richer session-only conversation
-  presentation; preserve click-to-talk, bounded audio and manual reconnect.
+- **Slice 3, implemented on draft branch:** larger actual-state cinematic orb,
+  responsive voice stage, bounded window-only plain-text conversation bubbles,
+  collapsible original transcript and local status context. No live audio
+  amplitude claims, auto-listening, auto-reconnect, or new model tools. Windows
+  visual/headset acceptance pending.
 - **Slice 4:** Academic cards and course filters only when actual feed data
   supports reliable course association; preserve source-labeled versus
   explicit due semantics.
