@@ -675,3 +675,123 @@ def test_home_reminders_read_only_local_preview_and_quick_sync(monkeypatch, tmp_
         assert window._worker is None
     finally:
         window.close()
+
+
+def test_cinematic_voice_page_uses_actual_session_states_without_audio():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._navigate("Voice")
+        assert window.orb._cinematic
+        assert window.orb.width() == 260
+        assert window._worker is None
+        assert window._state == "Disconnected"
+        assert not window.mic_button.isEnabled()
+        assert "Microphone off" in window.voice_activity.text()
+
+        for state, phase in (
+            ("Connecting", "Inactive"),
+            ("Ready", "Ready"),
+            ("Listening", "Listening"),
+            ("Responding", "Responding"),
+            ("Connection lost", "Inactive"),
+        ):
+            window._on_event("status", state)
+            assert window.voice_state_badge.text() == state
+            assert window.voice_state_badge.property("phase") == phase
+            assert window.orb._state == state
+            assert window.home_orb._state == state
+        assert window.connect_button.text() == "Reconnect"
+        assert window._worker is None  # No paid session initiated by visuals.
+    finally:
+        window.close()
+
+
+def test_cinematic_microphone_keeps_existing_manual_start_stop_gate():
+    app = QApplication.instance() or QApplication([])
+
+    class FakeSession:
+        def __init__(self):
+            self.commands = []
+
+        def request(self, value):
+            self.commands.append(value)
+
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        fake = FakeSession()
+        window._worker = fake
+        window._on_event("status", "Ready")
+        window.mic_button.click()
+        assert fake.commands == ["start"]
+        assert not window.mic_button.isEnabled()
+        window._on_event("status", "Listening")
+        assert window.mic_button.text() == "Stop recording"
+        window.mic_button.click()
+        assert fake.commands == ["start", "stop"]
+        assert not window.mic_button.isEnabled()
+        assert "Recording is active" in window.voice_activity.text()
+    finally:
+        window._worker = None
+        window.close()
+
+
+def test_cinematic_bubbles_are_plaintext_bounded_and_raw_transcript_retained():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        sample = '<img src="file:///private/image"> & literal text'
+        window._on_event("transcript", {"speaker": "user", "text": sample})
+        assert window._voice_bubble_entries[0][0] == "You"
+        bubble_text = window._voice_bubble_entries[0][1]
+        assert bubble_text.text() == sample
+        assert bubble_text.textFormat() == desktop.Qt.TextFormat.PlainText
+        assert sample in window.transcript.toPlainText()
+
+        window._on_event("transcript", {"speaker": "assistant", "text": "First"})
+        window._on_event("transcript", {"speaker": "assistant", "text": "chunk"})
+        assert len(window._voice_bubble_entries) == 2
+        assert window._voice_bubble_entries[-1][1].text() == "First chunk"
+
+        window.full_transcript_button.setChecked(True)
+        assert window.transcript.isVisibleTo(window)
+        assert window.full_transcript_button.text() == "Hide full text transcript"
+        window.full_transcript_button.setChecked(False)
+        assert not window.transcript.isVisibleTo(window)
+
+        for i in range(42):
+            window._append("System", f"Visual notice {i}")
+        assert len(window._voice_bubble_entries) == 36
+        assert "Visual notice 41" in window._voice_bubble_entries[-1][1].text()
+        assert "Visual notice 0" in window.transcript.toPlainText()
+        assert window._worker is None
+    finally:
+        window.close()
+
+
+def test_cinematic_context_is_local_and_stacks_when_narrow():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window.home_academic_status.setText("Brightspace: cached · local snapshot")
+        window.home_reminder_status.setText("2 pending reminders")
+        window.home_scheduler_status.setText("Calendar: worker not running")
+        window._refresh_voice_context()
+        assert "cached" in window.voice_context_academic.text()
+        assert "2 pending" in window.voice_context_reminders.text()
+        assert "worker not running" in window.voice_context_scheduler.text()
+        window.resize(1010, 760)
+        app.processEvents()
+        assert window.voice_columns.direction() == desktop.QBoxLayout.Direction.TopToBottom
+        window.resize(1330, 850)
+        app.processEvents()
+        assert window.voice_columns.direction() == desktop.QBoxLayout.Direction.LeftToRight
+        assert window._worker is None
+        assert window._scheduler is None
+        assert window._academic_sync is None
+    finally:
+        window.close()
