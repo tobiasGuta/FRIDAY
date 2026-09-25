@@ -20,7 +20,11 @@ def _installed_executable(application: Application) -> Path:
     local = os.environ.get("LOCALAPPDATA", "")
     candidates: list[Path] = []
     if application == "vscode":
-        for base in (local, os.environ.get("ProgramFiles", ""), os.environ.get("ProgramFiles(x86)", "")):
+        for base in (
+            local,
+            os.environ.get("ProgramFiles", ""),
+            os.environ.get("ProgramFiles(x86)", ""),
+        ):
             if base:
                 candidates.append(Path(base) / (
                     "Programs/Microsoft VS Code/Code.exe"
