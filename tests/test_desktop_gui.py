@@ -478,3 +478,326 @@ END:VCALENDAR
         assert any("Due (task): Actual VTODO task" in x for x in labels)
     finally:
         window.close()
+
+
+def test_hybrid_shell_navigation_exposes_six_real_pages_without_starting_workers():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        assert window.pages.count() == 6
+        assert tuple(window.nav_buttons) == (
+            "Home", "Voice", "Academic", "Reminders", "Calendar", "Settings"
+        )
+        assert window.page_title.text() == "Home"
+        assert window.nav_buttons["Home"].isChecked()
+        for index, page in enumerate(window.nav_buttons):
+            window._navigate(page)
+            assert window.pages.currentIndex() == index
+            assert window.page_title.text() == page
+            assert window.nav_buttons[page].isChecked()
+            assert sum(button.isChecked() for button in window.nav_buttons.values()) == 1
+        assert window._worker is None
+        assert window._scheduler is None
+        assert window._academic_sync is None
+        assert window.academic_feed_input.echoMode() == desktop.QLineEdit.EchoMode.Password
+        assert window.transcript.isReadOnly()
+        assert window.reminder_list is not None
+        assert window.scheduler_sync_option.isChecked() is False
+    finally:
+        window.close()
+
+
+def test_dashboard_only_mirrors_session_state_and_plaintext(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._on_event("status", "Ready")
+        assert window.home_voice_state.text() == "Voice · Ready"
+        dangerous = '<img src="file:///not-an-asset">'
+        window._on_event("transcript", {"speaker": "user", "text": dangerous})
+        assert dangerous in window.home_recent.text()
+        assert window.home_recent.textFormat() == desktop.Qt.TextFormat.PlainText
+        assert window.transcript.toPlainText().endswith(dangerous)
+        window._on_event("reminders", [{
+            "text": "Review notes", "at": "2026-10-01T15:00:00-04:00"
+        }])
+        assert "1 pending" in window.home_reminder_status.text()
+        assert window.reminder_list.count() == 1
+        monkeypatch.setattr(
+            desktop, "read_worker_health",
+            lambda: WorkerHealth(False, False, "stopped"),
+        )
+        window._refresh_worker_status()
+        assert window.calendar_status.text() in window.home_scheduler_status.text()
+        assert "worker not running" in window.top_scheduler_status.text()
+    finally:
+        window.close()
+
+
+def test_approval_draft_opens_voice_page_instead_of_creating_second_approval():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._navigate("Home")
+        window._on_event("status", "Ready")
+        draft = {"action": "create", "text": "Study", "at": "2026-10-01T15:00:00-04:00"}
+        window._on_event("draft", draft)
+        assert window.page_title.text() == "Voice"
+        assert window.approval_panel.isVisibleTo(window)
+        assert window.approve_button.isEnabled()
+        assert window.reject_button.isEnabled()
+        window._on_event("draft", None)
+        assert not window.approval_panel.isVisibleTo(window)
+        assert window._worker is None  # UI test never opens Gemini.
+    finally:
+        window.close()
+
+
+def test_home_academic_summary_is_from_local_visible_records_only(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._display_academic_cached()
+        assert window.home_academic_status.text() == window.academic_status.text()
+        assert window.top_academic_status.text() == "Brightspace: not synced"
+        assert not (tmp_path / "FRIDAY" / "brightspace.sqlite3").exists()
+    finally:
+        window.close()
+
+
+def test_home_polish_mirrors_voice_state_and_resizes_without_new_workers():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window.show()
+        window._on_event("status", "Listening")
+        assert window.home_orb._state == "Listening"
+        assert window.home_voice_title.text() == "Listening…"
+        window.resize(1000, 760)
+        app.processEvents()
+        assert window.home_columns.direction() == desktop.QBoxLayout.Direction.TopToBottom
+        assert window.top_academic_status.isHidden()
+        window.resize(1330, 850)
+        app.processEvents()
+        assert window.home_columns.direction() == desktop.QBoxLayout.Direction.LeftToRight
+        assert not window.top_academic_status.isHidden()
+        assert window._worker is None
+        assert window._scheduler is None
+        assert window._academic_sync is None
+    finally:
+        window.close()
+
+
+def test_home_academic_cards_preserve_source_due_distinctions(monkeypatch, tmp_path):
+    from friday.brightspace_calendar import AcademicSnapshot, AcademicStore, parse_calendar
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    sample = b"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:label
+DTSTART:20261005T235900Z
+SUMMARY:Worksheet I - Due
+END:VEVENT
+BEGIN:VTODO
+UID:explicit
+DUE;VALUE=DATE:20261006
+SUMMARY:Submit lab
+END:VTODO
+BEGIN:VEVENT
+UID:lecture
+DTSTART:20261007T140000Z
+SUMMARY:Class meeting
+END:VEVENT
+END:VCALENDAR
+"""
+    snapshot = AcademicSnapshot(
+        parse_calendar(sample),
+        "2026-09-24T23:00:00+00:00",
+    )
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        monkeypatch.setattr(AcademicStore, "upcoming", lambda self, **_kwargs: snapshot)
+        window._display_academic_cached()
+        assert window.home_academic_rows.count() == 3
+        labels = [
+            window.home_academic_rows.itemAt(i).widget().findChildren(desktop.QLabel)
+            for i in range(3)
+        ]
+        assert any("Brightspace-labeled due (event)" in x.text() for x in labels[0])
+        assert any("Due (task)" in x.text() for x in labels[1])
+        assert any("Scheduled" in x.text() for x in labels[2])
+        assert not (tmp_path / "FRIDAY" / "brightspace.sqlite3").exists()
+    finally:
+        window.close()
+
+
+def test_home_reminders_read_only_local_preview_and_quick_sync(monkeypatch, tmp_path):
+    import time
+    from datetime import UTC, datetime
+
+    from friday.schedule import ScheduleStore, default_database_path
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    now = time.time()
+    store = ScheduleStore(default_database_path())
+    due = datetime.fromtimestamp(now + 3600, UTC).isoformat()
+    store.reminder(due, "Read chapter", now=now)
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._refresh_home_reminders()
+        assert "1 pending" in window.home_reminder_status.text()
+        assert window.home_reminder_rows.count() == 1
+        assert "Read chapter" in [
+            label.text()
+            for label in window.home_reminder_rows.itemAt(0).widget()
+            .findChildren(desktop.QLabel)
+        ]
+        calls = []
+        monkeypatch.setattr(window, "_sync_academic", lambda: calls.append("sync"))
+        window._navigate("Home")
+        window.home_sync_button.click()
+        assert calls == ["sync"]
+        assert window.page_title.text() == "Academic"
+        assert window._worker is None
+    finally:
+        window.close()
+
+
+def test_cinematic_voice_page_uses_actual_session_states_without_audio():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._navigate("Voice")
+        assert window.orb._cinematic
+        assert window.orb.width() == 260
+        assert window._worker is None
+        assert window._state == "Disconnected"
+        assert not window.mic_button.isEnabled()
+        assert "Microphone off" in window.voice_activity.text()
+
+        for state, phase in (
+            ("Connecting", "Inactive"),
+            ("Ready", "Ready"),
+            ("Listening", "Listening"),
+            ("Responding", "Responding"),
+            ("Connection lost", "Inactive"),
+        ):
+            window._on_event("status", state)
+            assert window.voice_state_badge.text() == state
+            assert window.voice_state_badge.property("phase") == phase
+            assert window.orb._state == state
+            assert window.home_orb._state == state
+        assert window.connect_button.text() == "Reconnect"
+        assert window._worker is None  # No paid session initiated by visuals.
+    finally:
+        window.close()
+
+
+def test_cinematic_microphone_keeps_existing_manual_start_stop_gate():
+    app = QApplication.instance() or QApplication([])
+
+    class FakeSession:
+        def __init__(self):
+            self.commands = []
+
+        def request(self, value):
+            self.commands.append(value)
+
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        fake = FakeSession()
+        window._worker = fake
+        window._on_event("status", "Ready")
+        window.mic_button.click()
+        assert fake.commands == ["start"]
+        assert not window.mic_button.isEnabled()
+        window._on_event("status", "Listening")
+        assert window.mic_button.text() == "Stop recording"
+        window.mic_button.click()
+        assert fake.commands == ["start", "stop"]
+        assert not window.mic_button.isEnabled()
+        assert "Recording is active" in window.voice_activity.text()
+    finally:
+        window._worker = None
+        window.close()
+
+
+def test_cinematic_bubbles_are_plaintext_bounded_and_raw_transcript_retained():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window.show()
+        window._navigate("Voice")
+        app.processEvents()
+        sample = '<img src="file:///private/image"> & literal text'
+        window._on_event("transcript", {"speaker": "user", "text": sample})
+        assert window._voice_bubble_entries[0][0] == "You"
+        bubble_text = window._voice_bubble_entries[0][1]
+        assert bubble_text.text() == sample
+        assert bubble_text.textFormat() == desktop.Qt.TextFormat.PlainText
+        assert sample in window.transcript.toPlainText()
+
+        window._on_event("transcript", {"speaker": "assistant", "text": "First"})
+        window._on_event("transcript", {"speaker": "assistant", "text": "chunk"})
+        assert len(window._voice_bubble_entries) == 2
+        assert window._voice_bubble_entries[-1][1].text() == "First chunk"
+
+        window.full_transcript_button.setChecked(True)
+        assert window.transcript.isVisibleTo(window)
+        assert window.full_transcript_button.text() == "Hide full text transcript"
+        window.full_transcript_button.setChecked(False)
+        assert not window.transcript.isVisibleTo(window)
+
+        for i in range(42):
+            window._append("System", f"Visual notice {i}")
+        assert len(window._voice_bubble_entries) == 36
+        assert "Visual notice 41" in window._voice_bubble_entries[-1][1].text()
+        assert "Visual notice 0" in window.transcript.toPlainText()
+        assert window._worker is None
+    finally:
+        window.close()
+
+
+def test_cinematic_context_is_local_and_stacks_when_narrow():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window.show()
+        window._navigate("Voice")
+        app.processEvents()
+        window.home_academic_status.setText("Brightspace: cached · local snapshot")
+        window.home_reminder_status.setText("2 pending reminders")
+        window.home_scheduler_status.setText("Calendar: worker not running")
+        window._refresh_voice_context()
+        assert "cached" in window.voice_context_academic.text()
+        assert "2 pending" in window.voice_context_reminders.text()
+        assert "worker not running" in window.voice_context_scheduler.text()
+        window.resize(1010, 760)
+        app.processEvents()
+        assert window.voice_columns.direction() == desktop.QBoxLayout.Direction.TopToBottom
+        window.resize(1330, 850)
+        app.processEvents()
+        assert window.voice_columns.direction() == desktop.QBoxLayout.Direction.LeftToRight
+        assert window._worker is None
+        assert window._scheduler is None
+        assert window._academic_sync is None
+    finally:
+        window.close()

@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.5.4 adds opt-in, read-only CUNY Brightspace calendar intelligence alongside the established desktop scheduler and voice recovery.**
+A harness-first personal AI assistant. **v0.5.5 is a draft hybrid desktop shell: Home, Voice, Academic, Reminders, Calendar and Settings preserve the working v0.5.4 capabilities.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.5.4)
+## What works today (v0.5.5 draft)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -44,7 +44,7 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
-## FRIDAY desktop interface (v0.5.4)
+## FRIDAY desktop interface (v0.5.5 draft)
 
 The optional PySide6 shell provides click-to-talk, an animated voice orb, plain-text
 transcripts, an upcoming-reminders list and app-owned **Confirm / Cancel** controls.
@@ -66,7 +66,70 @@ wait for **Ready** before the next turn. Reminder drafts are on by default and w
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
 
-### Brightspace calendar (v0.5.4; live Windows acceptance pending)
+### Hybrid desktop shell (v0.5.5 Slices 1–3; Windows Slice 3 acceptance pending)
+
+FRIDAY now has a six-page PySide6 Widgets shell: **Home**, **Voice**,
+**Academic**, **Reminders**, **Calendar** and **Settings**. Navigation does not
+start a voice session, a database worker or a network request. The top bar
+mirrors the actual session/scheduler/academic state and computer-local time.
+
+- **Home**: responsive wide/tall cards, a state-mirrored decorative orb, up to
+  three cached Brightspace items with explicit/source-labeled/scheduled types,
+  up to three future pending reminders via a **read-only SQLite connection**,
+  and true scheduler status. The conversation preview is **window-only** and does not persist chat history. At narrower window widths the
+  cards stack and the detailed top chips hide (the full states remain on the
+  dedicated pages). The Home Sync now shortcut uses the existing Academic
+  action and navigates to its status; it never starts Gemini or bypasses
+  credential checks.
+- **Voice**: a larger cinematic Qt-painted orb driven only by the actual
+  connection/listening/responding states, a read-only in-memory conversation
+  bubble view (bounded to 36 entries), a collapsible full plain-text transcript,
+  and local Brightspace/reminder/scheduler status. There is one canonical
+  click-to-talk microphone button, one confirmation panel and one set of
+  existing opt-in reminder/web controls. A new reminder draft opens Voice so
+  the real host-owned Confirm/Cancel controls remain visible. Bubble text
+  never executes HTML, is not saved or sent anywhere, and is **not** an audio
+  waveform or a claimed true speech amplitude meter. The raw transcript
+  remains bounded by the existing 250-block limit. The microphone does not
+  start automatically and reconnect remains manual.
+- **Academic**: the original protected feed entry, Save, Sync now, Remove,
+  optional 30-minute desktop-scheduler refresh, next-connection read-only
+  voice opt-in, and due-label distinctions.
+- **Reminders**: existing pending-reminder list. Actual approval remains
+  on Voice; the UI does not invent batch-approval or direct schedule actions.
+- **Calendar**: original owned-worker controls and optional Google sync.
+  The new UI does not claim to read unrelated Google calendar events.
+- **Settings**: navigation to the existing functional controls, plus an
+  honest appearance placeholder. No new persistent preferences are written.
+
+The UI redraw is intentionally within the existing Qt Widgets framework;
+no new permission, provider integration, paid session behavior, or credential
+storage mechanism is introduced. Source-supported academic course grouping,
+advanced motion/compact floating mode and full appearance options remain
+subsequent slices. Mockup-only courses, actions and information must **not**
+be mistaken for implemented data or features.
+
+### Voice turn-end diagnostics (v0.5.5 draft)
+
+If FRIDAY says `Voice response stalled for 30 seconds` after it already
+spoke, the current voice worker is still waiting for a final Live API
+`turn_complete` signal. This is an existing safety gate, not a Voice
+page animation timeout. The draft diagnostic emits one safe summary on
+failure with five booleans:
+`generation_complete`, `turn_complete`, `assistant_text`,
+`audio_received`, and `audio_callback` (PCM delivered to the local
+output callback; this does not prove audible speaker output).
+No speech content, PCM, raw provider messages,
+credentials, or subscription URLs are included. The session still closes
+safely and requires an **explicit** reconnect; do not treat
+`generation_complete` as final turn completion or auto-reconnect.
+
+To troubleshoot, keep a short session with web search off and compare
+the diagnostic line. Do not upload API keys, `.env`, audio recordings,
+or raw Gemini debug payloads. Full hardware acceptance and any
+protocol-level correction require evidence of which marker is missing.
+
+### Brightspace calendar (introduced in v0.5.4; Windows feed accepted)
 
 The optional `brightspace` extra provides iCalendar parsing, HTTPS retrieval
 and protected credential storage. This is **not** an official Brightspace OAuth
@@ -78,7 +141,8 @@ Brightspace Calendar tool.
    **All Calendars and Tasks**. Keep its private subscription URL secret.
 2. Quit FRIDAY completely from the system tray, install the extras shown above,
    and relaunch the desktop shortcut.
-3. Open the **Brightspace** tab under the conversation panel. Paste the URL
+3. Open **Academic** from the v0.5.5 sidebar (the older v0.5.4 interface
+   used a Brightspace tab under Conversation). Paste the URL
    **only into FRIDAY's masked field**, then click **Save feed**. The URL is
    written to the OS credential vault, not to the repository or a plaintext
    configuration. If protected storage is unavailable, saving fails closed.

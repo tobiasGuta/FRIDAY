@@ -79,6 +79,35 @@ class WorkerHealth:
     last_success: float | None = None
 
 
+def read_pending_reminder_preview(
+    *, path: Path | None = None, limit: int = 3, now: float | None = None
+) -> tuple[int, tuple[tuple[str, float], ...]]:
+    """Bounded, read-only Home preview. Never creates or migrates the database.
+
+    Returns the number of future pending reminders and up to `limit` title/time
+    pairs. A missing database is an empty local store, not an error.
+    """
+    if type(limit) is not int or not 1 <= limit <= 5:
+        raise ValueError("Preview limit must be 1–5")
+    database = default_database_path() if path is None else Path(path)
+    if not database.is_file():
+        return 0, ()
+    current = time.time() if now is None else now
+    with closing(
+        sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+    ) as db:
+        where = "kind = 'reminder' AND status = 'pending' AND due_at > ?"
+        count = db.execute(
+            f"SELECT COUNT(*) FROM schedules WHERE {where}", (current,)
+        ).fetchone()[0]
+        rows = db.execute(
+            f"SELECT text, due_at FROM schedules WHERE {where} "
+            "ORDER BY due_at, id LIMIT ?",
+            (current, limit),
+        ).fetchall()
+    return count, tuple((str(text), float(due_at)) for text, due_at in rows)
+
+
 class ScheduleStore:
     """One SQLite file can be shared by CLI writers and one background worker."""
 

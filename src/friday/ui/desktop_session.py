@@ -17,6 +17,7 @@ from friday.core.session import SessionError, SessionManager
 from friday.voice_reminders import ReminderDraft, VoiceReminderApproval
 
 UiEvent = Callable[[str, Any], None]
+VOICE_STALL_SECONDS = 30.0
 
 
 def draft_display(draft: ReminderDraft | None) -> dict[str, str] | None:
@@ -56,7 +57,10 @@ class DesktopVoiceSession:
         self.turn_finished = asyncio.Event()
         self.user_chunks = 0
         self.audio_bytes = 0
+        self.played_at_turn_start = 0
         self.completions = 0
+        self.generation_completions = 0
+        self.assistant_chunks = 0
         self._end_reason: str | None = None
         self._quit_requested = False
 
@@ -108,7 +112,13 @@ class DesktopVoiceSession:
                     if self.approval is not None and event.text:
                         self.approval.hear_user(event.text)
                 if event.text:
+                    if event.speaker == "assistant":
+                        self.assistant_chunks += 1
                     self.emit("transcript", {"speaker": event.speaker, "text": event.text})
+            elif event.kind is EventKind.GENERATION_COMPLETE:
+                # Generation completion does NOT unlock the microphone; only
+                # the server's final TURN_COMPLETE or INTERRUPTED signal can.
+                self.generation_completions += 1
             elif event.kind is EventKind.NOTICE:
                 self.emit("notice", event.text or "")
                 self._pending()
@@ -154,7 +164,7 @@ class DesktopVoiceSession:
             warning = expires - min(30, max(1, self.max_seconds // 5))
             warned = False
             deadline: float | None = None
-            progress: tuple[int, int, int, int] | None = None
+            progress: tuple[int, int, int, int, int] | None = None
             # An already-started spoken reply gets at most 30 seconds to finish
             # after the normal limit; a new turn is never admitted after expiry.
             async with asyncio.timeout(self.max_seconds + 30):
@@ -239,7 +249,10 @@ class DesktopVoiceSession:
                                 self.turn_finished.clear()
                                 self.user_chunks = 0
                                 self.audio_bytes = 0
+                                self.played_at_turn_start = self.speaker.played_bytes
                                 self.completions = 0
+                                self.generation_completions = 0
+                                self.assistant_chunks = 0
                                 if self.approval is not None:
                                     self.approval.begin_turn()
                                 await self.turns.start()
@@ -247,7 +260,7 @@ class DesktopVoiceSession:
                             elif command == "stop" and self.turns.recording:
                                 await self.turns.stop()
                                 self.emit("status", "Responding")
-                                deadline = loop.time() + 30.0
+                                deadline = loop.time() + VOICE_STALL_SECONDS
                                 progress = None
                             elif command in {"approve", "reject"} and (
                                 self.approval is not None and not self.turns.recording
@@ -267,13 +280,31 @@ class DesktopVoiceSession:
                             current = (
                                 self.user_chunks, self.audio_bytes,
                                 self.completions, self.speaker.played_bytes,
+                                self.generation_completions,
                             )
                             if current != progress:
                                 progress = current
-                                deadline = loop.time() + 30.0
+                                deadline = loop.time() + VOICE_STALL_SECONDS
                             elif loop.time() >= deadline:
                                 self._end_reason = "connection"
-                                self.emit("error", "Voice response stalled for 30 seconds.")
+                                # These fixed labels/counters do not expose
+                                # PCM, transcript, provider payloads or keys.
+                                self.emit(
+                                    "notice",
+                                    "Voice turn-end diagnostics: "
+                                    f"generation_complete={bool(self.generation_completions)}; "
+                                    f"turn_complete={bool(self.completions)}; "
+                                    f"assistant_text={bool(self.assistant_chunks)}; "
+                                    f"audio_received={bool(self.audio_bytes)}; "
+                                    "audio_callback="
+                                    f"{self.speaker.played_bytes > self.played_at_turn_start}.",
+                                )
+                                self.emit(
+                                    "error",
+                                    "Voice response stalled for 30 seconds. "
+                                    "Final turn completion was not received; "
+                                    "reconnect manually.",
+                                )
                                 break
                     finally:
                         pending_tasks = [command_task]

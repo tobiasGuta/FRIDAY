@@ -119,6 +119,10 @@ def normalize_gemini_message(
                     )
         if getattr(content, "interrupted", False):
             yield VoiceEvent(EventKind.INTERRUPTED)
+        if getattr(content, "generation_complete", False):
+            # This is NOT turn_complete: server playback/interaction may still
+            # be in progress. Used only for safe failure classification.
+            yield VoiceEvent(EventKind.GENERATION_COMPLETE)
         if getattr(content, "turn_complete", False):
             yield VoiceEvent(EventKind.TURN_COMPLETE)
     if getattr(message, "go_away", None):
@@ -386,9 +390,12 @@ class GeminiLiveProvider:
                 for event in normalize_gemini_message(
                     message, output_sample_rate=self.settings.output_sample_rate
                 ):
-                    if event.kind is EventKind.TURN_COMPLETE and awaiting_tool_followup:
-                        # Do not tell the UI to reopen the microphone while a
-                        # tool-assisted spoken answer has not arrived yet.
+                    if (
+                        event.kind in {EventKind.TURN_COMPLETE, EventKind.GENERATION_COMPLETE}
+                        and awaiting_tool_followup
+                    ):
+                        # Intermediate tool turn is not the final spoken answer.
+                        # A tool-call completion must not satisfy voice watchdogs.
                         continue
                     if (
                         tool_call is None

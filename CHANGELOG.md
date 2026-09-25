@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.5 — Hybrid desktop shell (Slices 1–3; Windows Slice 3 acceptance pending)
+
+- Introduce six navigable PySide6 Widgets pages: Home, Voice, Academic,
+  Reminders, Calendar, Settings, with a new dark dashboard style and live
+  session/scheduler/Brightspace status bar.
+- Reuse one canonical copy of existing voice, reminder approval, Brightspace,
+  and scheduler controls; a reminder draft routes to the Voice page instead
+  of generating an unapproved parallel workflow.
+- Mirror local cached coursework and current-session transcript on Home
+  without retrieving Brightspace at startup, storing conversation history,
+  or starting a microphone / Gemini session.
+- Polish Home with a second decorative state-driven orb, actual upcoming
+  academic item cards and original due-label distinctions, a bounded read-only
+  local reminder preview, scheduler status, safe quick navigation/manual sync,
+  and narrow-window stacked columns. The canonical voice and approval
+  controls remain on their own page; the UI adds no fictional actions.
+- Redesign Voice as a responsive cinematic stage with larger actual-state
+  animated orb, visible connection/recording captions, bounded session-window
+  conversation bubbles, a collapsible original raw transcript, and local
+  academic/reminder/scheduler context. No audio-level inference or automatic
+  microphone connection, no model calls to render UI, no HTML rendering of
+  transcript content. Existing approvals and manual audio controls remain.
+- Preserve protected feed credential storage, read-only calendar semantics,
+  opt-in Google publishing, local scheduler ownership, and quit/tray lifecycle.
+- Add headless navigation, approval, offline cache, state-mirroring, and
+  plain-text regression tests. Advanced motion, course identification,
+  calendar grid, and floating mini-mode remain subsequent UI slices.
+
+
 ## 0.5.4 — Brightspace calendar intelligence (Windows live-feed acceptance pending)
 
 - Add a strictly read-only CUNY Brightspace iCalendar connector. An explicit
