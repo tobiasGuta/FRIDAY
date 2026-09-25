@@ -67,7 +67,72 @@ def _orbit(
     painter.restore()
 
 
-def paint_orbital_lab(painter: QPainter, *, phase: float, state: str) -> None:
+
+def _paint_fragments(painter: QPainter, *, phase: float, energy: float) -> None:
+    """Draw a small deterministic energy field around the existing orbital core.
+
+    These are decorative Qt primitives, not sampled audio or random particles.
+    Fixed positions and phase-derived motion make every frame reproducible.
+    """
+    painter.save()
+
+    # Sparse points at the perimeter leave the central energy core readable.
+    # Alternating drift directions and opacity give a layered depth illusion.
+    for index in range(18):
+        theta = index * 2.399963229728653 + phase * (0.10 if index % 2 else -0.075)
+        radius = 69 + (index * 11 % 19)
+        point = QPointF(
+            _CENTER.x() + math.cos(theta) * radius,
+            _CENTER.y() + math.sin(theta) * radius * 0.79,
+        )
+        shimmer = 0.65 + 0.35 * math.sin(phase * 0.47 + index * 1.37)
+        alpha = round((100 + 64 * shimmer) * energy)
+        size = 1.15 if index % 5 == 0 else 0.7
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(_tint("#F7A64D", round(alpha * 0.22)))
+        painter.drawEllipse(point, size + 1.6, size + 1.6)
+        painter.setBrush(_tint("#FFE4A8", alpha))
+        painter.drawEllipse(point, size, size)
+
+    # Glowing fragments follow the same three tilted orbital planes as Slice 1.
+    # Short, faded tails are drawn behind selected segments, never full trails.
+    planes = (
+        (22, 81, 27, 0.65, 0.1),
+        (83, 73, 40, -0.40, 2.4),
+        (-39, 66, 20, 0.22, 4.7),
+    )
+    for plane, (tilt, width, height, speed, offset) in enumerate(planes):
+        painter.save()
+        painter.translate(_CENTER)
+        painter.rotate(tilt + 5.5 * math.sin(phase * 0.22 + offset))
+        ellipse = QRectF(-width, -height, width * 2, height * 2)
+        for segment in range(2):
+            angle = math.degrees(phase * speed) + offset * 57 + segment * 169
+            shimmer = 0.70 + 0.30 * math.sin(phase * 0.55 + plane + segment)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(_tint("#F7A64D", round(66 * energy * shimmer)), 3.0))
+            painter.drawArc(ellipse, round(angle * 16), 10 * 16)
+            painter.setPen(QPen(_tint("#FFE5AD", round(173 * energy * shimmer)), 1.0))
+            painter.drawArc(ellipse, round(angle * 16), 10 * 16)
+            if segment == 0:
+                for tail in range(2):
+                    painter.setPen(
+                        QPen(
+                            _tint("#EFA04B", round((39 - 13 * tail) * energy * shimmer)),
+                            0.75,
+                        )
+                    )
+                    painter.drawArc(
+                        ellipse, round((angle - (tail + 1) * 9) * 16), 6 * 16
+                    )
+        painter.restore()
+
+    painter.restore()
+
+
+def paint_orbital_lab(
+    painter: QPainter, *, phase: float, state: str, fragments: bool = False
+) -> None:
     """Draw the optional v0.5.7 renderer in the existing 184x184 orb coordinate space."""
     energy = _STATE_ENERGY.get(state, 0.3)
     breathing = (1.0 + math.sin(phase * 0.85)) / 2.0
@@ -114,6 +179,9 @@ def paint_orbital_lab(painter: QPainter, *, phase: float, state: str) -> None:
                 _CENTER.y() + math.sin(theta) * radius,
             ),
         )
+
+    if fragments:
+        _paint_fragments(painter, phase=phase, energy=energy)
 
     # The center breathes slightly at rest and becomes brighter while speaking.
     painter.setPen(Qt.PenStyle.NoPen)
