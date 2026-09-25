@@ -1,6 +1,6 @@
 # FRIDAY v0.5.6 — accepted Focus Voice baseline
 
-Status: **Windows user acceptance reported on 2026-09-25; release PRs remain draft until review/merge authorization.**
+Status: **Windows user acceptance reported on 2026-09-25. PR #9 (v0.5.5) is merged; PR #10 (v0.5.6) remains in release review.**
 
 This is a preservation record, not a claim that a long-duration reliability soak
 or every hardware/device combination has been tested.
@@ -96,10 +96,10 @@ shader/QML experiment optional, off by default, and easy to revert.
 
 ## Promotion order
 
-- PR #9 (`feat/v0.5.5-hybrid-shell`) must be reviewed and merged into
-  `main` first.
-- Retarget PR #10 (`feat/v0.5.6-focus-voice`) onto `main` after PR #9
-  merges, re-check its diff and latest CI, then review and merge it.
+- PR #9 (`feat/v0.5.5-hybrid-shell`) was merged into `main` on
+  2026-09-25 as commit `0ca8f1bc13cd52619c721fde4f0992e3b7d2f4f9`.
+- PR #10 (`feat/v0.5.6-focus-voice`) now targets `main`. Re-check its
+  diff and latest CI, then review and merge it when authorized.
 - The exact accepted source checkpoint remains available even if release
   documentation is edited afterward. Create an annotated `v0.5.6` tag on
   the final accepted main commit only after those promotions and checks;
