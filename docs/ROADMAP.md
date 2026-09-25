@@ -173,6 +173,16 @@
   `docs/ACCEPTED_FOCUS_BASELINE.md`. PR #9 was merged into `main`;
   PR #10 now targets `main` and awaits release authorization.
 
+## v0.5.7 — Hologram Lab (experimental branch)
+
+- Slice 1: optional Qt painter orbital planes and layered amber energy core;
+  Classic v0.5.6 renderer remains default with immediate UI fallback.
+- Offline pixel-difference, hidden/idle behavior and no-new-session checks;
+  Windows visual/headset acceptance needed before considering release.
+- Slice 2 (not implemented): restrained separate particle/fragment field.
+- Slice 3 (not implemented): richer motion state transitions and reduced-motion
+  preference; evaluate performance rather than assume smoothness.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.
