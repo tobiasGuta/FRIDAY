@@ -17,6 +17,7 @@ from PySide6.QtCore import QPointF, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QRadialGradient
 from PySide6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QCheckBox,
     QFrame,
     QHBoxLayout,
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
 from friday import __version__
 from friday.audio.devices import AudioDeviceError, Microphone, Speaker
 from friday.brightspace_calendar import (
+    AcademicSnapshot,
     AcademicStore,
     BrightspaceError,
     display_time,
@@ -47,7 +49,12 @@ from friday.brightspace_feed import forget_feed, save_feed
 from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
 from friday.providers.gemini_live import GeminiLiveProvider
-from friday.schedule import ScheduleStore, WorkerHealth, read_worker_health
+from friday.schedule import (
+    ScheduleStore,
+    WorkerHealth,
+    read_pending_reminder_preview,
+    read_worker_health,
+)
 from friday.ui.brightspace_worker import AcademicSyncThread
 from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
@@ -106,9 +113,9 @@ def _calendar_label(health: WorkerHealth) -> str:
 class VoiceOrb(QWidget):
     """A light-weight painted indicator; no media, microphone, or model ownership."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, diameter: int = 184) -> None:
         super().__init__(parent)
-        self.setFixedSize(184, 184)
+        self.setFixedSize(diameter, diameter)
         self._phase = 0.0
         self._state = "Disconnected"
         self._timer = QTimer(self)
@@ -129,6 +136,7 @@ class VoiceOrb(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
+        painter.scale(self.width() / 184, self.height() / 184)
         colors = {
             "Listening": QColor("#54DFC4"),
             "Responding": QColor("#A18BFF"),
@@ -136,7 +144,7 @@ class VoiceOrb(QWidget):
             "Connecting": QColor("#85A6DC"),
         }
         color = colors.get(self._state, QColor("#4D627F"))
-        center = QPointF(self.width() / 2, self.height() / 2)
+        center = QPointF(92, 92)
         pulse = 5.0 * (1.0 + math.sin(self._phase)) if self._state in {
             "Listening", "Responding", "Connecting"
         } else 0.0
@@ -280,6 +288,7 @@ class DesktopWindow(QMainWindow):
         self._academic_sync: AcademicSyncThread | None = None
         self._academic_synced_session = False
         self._academic_cache_ready = False
+        self._home_academic_snapshot: AcademicSnapshot | None = None
         self._scheduler_stop_requested = False
         self._scheduler_had_error = False
         self._closing = False
@@ -454,82 +463,210 @@ class DesktopWindow(QMainWindow):
         )
         return button
 
+    @staticmethod
+    def _home_summary_row(title: str, detail: str, *, tag: str = "") -> QFrame:
+        """Presentation only. All source text stays plain and unclickable."""
+        card = QFrame()
+        card.setObjectName("summaryRow")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(13, 10, 13, 10)
+        layout.setSpacing(5)
+        if tag:
+            label = QLabel(tag)
+            label.setObjectName("summaryBadge")
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            layout.addWidget(label)
+        heading = QLabel(title)
+        heading.setObjectName("itemTitle")
+        heading.setTextFormat(Qt.TextFormat.PlainText)
+        heading.setWordWrap(True)
+        layout.addWidget(heading)
+        info = QLabel(detail)
+        info.setObjectName("subheading")
+        info.setTextFormat(Qt.TextFormat.PlainText)
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        return card
+
+    @staticmethod
+    def _clear_home_rows(rows: QVBoxLayout) -> None:
+        while rows.count():
+            item = rows.takeAt(0)
+            if widget := item.widget():
+                widget.deleteLater()
+
     def _build_home_page(self) -> None:
         page = self._new_page()
+        page.setSpacing(15)
         banner = self._panel()
         banner.setObjectName("hero")
         hero = QHBoxLayout(banner)
-        hero.setContentsMargins(22, 18, 22, 18)
+        hero.setContentsMargins(19, 13, 21, 13)
+        hero.setSpacing(17)
         greeting = QVBoxLayout()
-        greeting_title = QLabel("Welcome back, Tobias")
-        greeting_title.setObjectName("heading")
-        greeting.addWidget(greeting_title)
+        greeting.setSpacing(7)
+        eyebrow = QLabel("YOUR PERSONAL ASSISTANT")
+        eyebrow.setObjectName("eyebrow")
+        greeting.addWidget(eyebrow)
+        self.home_greeting = QLabel("Welcome back, Tobias")
+        self.home_greeting.setObjectName("heading")
+        greeting.addWidget(self.home_greeting)
         greeting.addWidget(self._plain_label(
-            "Your assistant for coursework, everyday reminders, and conversation."
+            "Your day, coursework and reminders — with FRIDAY ready when you are."
         ))
-        hero.addLayout(greeting, 2)
-        self.home_voice_state = self._plain_label("Voice is disconnected")
-        hero.addWidget(self.home_voice_state, 1)
-        hero.addWidget(self._open_page_button("Open voice", "Voice"))
+        hero.addLayout(greeting, 1)
         page.addWidget(banner)
 
-        row = QHBoxLayout()
-        row.setSpacing(13)
+        voice_card = self._panel()
+        voice_card.setObjectName("homeVoiceHero")
+        voice = QHBoxLayout(voice_card)
+        voice.setContentsMargins(18, 14, 20, 14)
+        voice.setSpacing(18)
+        self.home_orb = VoiceOrb(diameter=140)
+        voice.addWidget(self.home_orb, alignment=Qt.AlignmentFlag.AlignVCenter)
+        voice_copy = QVBoxLayout()
+        voice_copy.setSpacing(9)
+        self.home_voice_title = QLabel("Ready when you are")
+        self.home_voice_title.setObjectName("pageTitle")
+        voice_copy.addWidget(self.home_voice_title)
+        self.home_voice_state = self._plain_label("Voice · Disconnected")
+        voice_copy.addWidget(self.home_voice_state)
+        voice_copy.addWidget(self._plain_label(
+            "Click to open Voice, then connect and use the existing microphone controls."
+        ))
+        launch = self._open_page_button("Open cinematic Voice →", "Voice")
+        launch.setObjectName("primary")
+        voice_copy.addWidget(launch, alignment=Qt.AlignmentFlag.AlignLeft)
+        voice.addLayout(voice_copy, 1)
+        page.addWidget(voice_card)
+
+        self.home_columns = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.home_columns.setSpacing(14)
         left = QVBoxLayout()
-        left.setSpacing(13)
+        left.setSpacing(14)
         academic = self._panel()
         academic_layout = QVBoxLayout(academic)
         academic_layout.setContentsMargins(17, 15, 17, 15)
+        academic_layout.setSpacing(10)
         academic_layout.addLayout(self._heading(
-            "Brightspace academic calendar",
-            subtitle="Read-only · upcoming items from the last valid local snapshot",
+            "Brightspace · upcoming",
+            subtitle="Local snapshot · read-only · published calendar entries only",
         ))
         self.home_academic_status = self._plain_label("Brightspace: not synced")
         academic_layout.addWidget(self.home_academic_status)
         self.home_academic_items = self._plain_label("Sync your feed on the Academic page.")
         academic_layout.addWidget(self.home_academic_items)
-        academic_layout.addWidget(self._open_page_button("Open Academic", "Academic"))
+        self.home_academic_rows = QVBoxLayout()
+        self.home_academic_rows.setSpacing(7)
+        academic_layout.addLayout(self.home_academic_rows)
+        self.home_academic_note = self._plain_label(
+            "The feed can omit assignments. Event titles labeled Due are not "
+            "independently verified submission deadlines."
+        )
+        self.home_academic_note.setObjectName("hint")
+        academic_layout.addWidget(self.home_academic_note)
+        academic_buttons = QHBoxLayout()
+        academic_buttons.addWidget(self._open_page_button("View Academic", "Academic"))
+        self.home_sync_button = QPushButton("Sync now")
+        self.home_sync_button.clicked.connect(self._home_sync_academic)
+        academic_buttons.addWidget(self.home_sync_button)
+        academic_layout.addLayout(academic_buttons)
         left.addWidget(academic)
 
         scheduler = self._panel()
         scheduler_layout = QVBoxLayout(scheduler)
         scheduler_layout.setContentsMargins(17, 15, 17, 15)
+        scheduler_layout.setSpacing(9)
         scheduler_layout.addLayout(self._heading(
             "Scheduler / Google Calendar",
-            subtitle="Existing local reminder worker, with Google sync only by opt-in.",
+            subtitle="Local reminders · optional separate Google Calendar sync",
         ))
-        self.home_scheduler_status = self._plain_label("Scheduler: checking…")
+        self.home_scheduler_status = self._plain_label("Calendar: checking worker…")
         scheduler_layout.addWidget(self.home_scheduler_status)
-        scheduler_layout.addWidget(self._open_page_button("Open Calendar", "Calendar"))
+        self.home_scheduler_note = self._plain_label(
+            "Scheduler operation is independent of Gemini. Google sync remains opt-in."
+        )
+        self.home_scheduler_note.setObjectName("hint")
+        scheduler_layout.addWidget(self.home_scheduler_note)
+        scheduler_layout.addWidget(self._open_page_button("View Calendar", "Calendar"))
         left.addWidget(scheduler)
-        row.addLayout(left, 3)
+        self.home_columns.addLayout(left, 3)
 
         right = QVBoxLayout()
-        right.setSpacing(13)
+        right.setSpacing(14)
         conversation = self._panel()
         conversation_layout = QVBoxLayout(conversation)
         conversation_layout.setContentsMargins(17, 15, 17, 15)
+        conversation_layout.setSpacing(9)
         conversation_layout.addLayout(self._heading(
             "Current conversation",
-            subtitle="Session-only preview. No conversation history is stored.",
+            subtitle="Current session preview only · no persisted conversation memory",
         ))
         self.home_recent = self._plain_label("Connect to start a conversation.")
         conversation_layout.addWidget(self.home_recent)
-        conversation_layout.addWidget(self._open_page_button("Open Voice", "Voice"))
+        conversation_layout.addWidget(self._open_page_button("Open transcript", "Voice"))
         right.addWidget(conversation)
+
         reminders = self._panel()
         reminders_layout = QVBoxLayout(reminders)
         reminders_layout.setContentsMargins(17, 15, 17, 15)
-        reminders_layout.addLayout(self._heading("Reminders"))
-        self.home_reminder_status = self._plain_label(
-            "Use the Reminders page to view pending reminders."
-        )
+        reminders_layout.setSpacing(9)
+        reminders_layout.addLayout(self._heading(
+            "Upcoming reminders",
+            subtitle="Only future pending items from your local reminders",
+        ))
+        self.home_reminder_status = self._plain_label("Checking local reminders…")
         reminders_layout.addWidget(self.home_reminder_status)
-        reminders_layout.addWidget(self._open_page_button("Open Reminders", "Reminders"))
+        self.home_reminder_items = self._plain_label("No pending reminders.")
+        reminders_layout.addWidget(self.home_reminder_items)
+        self.home_reminder_rows = QVBoxLayout()
+        self.home_reminder_rows.setSpacing(7)
+        reminders_layout.addLayout(self.home_reminder_rows)
+        reminders_layout.addWidget(self._plain_label(
+            "Approval of voice drafts stays on the Voice page."
+        ))
+        reminders_layout.addWidget(self._open_page_button("View Reminders", "Reminders"))
         right.addWidget(reminders)
-        row.addLayout(right, 2)
-        page.addLayout(row)
+        self.home_columns.addLayout(right, 2)
+        page.addLayout(self.home_columns)
+
+        quick = self._panel()
+        quick_layout = QVBoxLayout(quick)
+        quick_layout.setContentsMargins(17, 14, 17, 14)
+        quick_layout.addLayout(self._heading("Quick navigation"))
+        actions = QHBoxLayout()
+        actions.addWidget(self._open_page_button("Voice", "Voice"))
+        actions.addWidget(self._open_page_button("Academic", "Academic"))
+        actions.addWidget(self._open_page_button("Reminders", "Reminders"))
+        actions.addWidget(self._open_page_button("Calendar", "Calendar"))
+        quick_layout.addLayout(actions)
+        page.addWidget(quick)
         page.addStretch(1)
+        self._adapt_home_layout(self.width())
+
+    def _home_sync_academic(self) -> None:
+        """Reuse the canonical manual sync and show its status on the Academic page."""
+        if self._academic_sync is not None or self._quitting or self._closing:
+            return
+        self._navigate("Academic")
+        self._sync_academic()
+
+    def _adapt_home_layout(self, width: int) -> None:
+        if not hasattr(self, "home_columns"):
+            return
+        compact = width < 1120
+        self.home_columns.setDirection(
+            QBoxLayout.Direction.TopToBottom
+            if compact else QBoxLayout.Direction.LeftToRight
+        )
+        self.home_columns.setStretch(0, 0 if compact else 3)
+        self.home_columns.setStretch(1, 0 if compact else 2)
+        self.top_scheduler_status.setVisible(not compact)
+        self.top_academic_status.setVisible(not compact)
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        self._adapt_home_layout(event.size().width())
 
     def _build_voice_page(self, reminders: bool, web: bool) -> None:
         page = self._new_page()
