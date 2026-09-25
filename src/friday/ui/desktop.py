@@ -52,15 +52,15 @@ from friday.brightspace_feed import forget_feed, save_feed
 from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
 from friday.providers.gemini_live import GeminiLiveProvider
-from friday.tools.project_launcher import ProjectLauncher
-from friday.tools.project_voice import ProjectLaunchProposals
-from friday.tools.projects import ProjectCatalog, ProjectError
 from friday.schedule import (
     ScheduleStore,
     WorkerHealth,
     read_pending_reminder_preview,
     read_worker_health,
 )
+from friday.tools.project_launcher import ProjectLauncher
+from friday.tools.project_voice import ProjectLaunchProposals
+from friday.tools.projects import ProjectCatalog, ProjectError
 from friday.ui.brightspace_worker import AcademicSyncThread
 from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
