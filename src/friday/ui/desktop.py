@@ -1520,7 +1520,7 @@ class DesktopWindow(QMainWindow):
             target = "VS Code" if application == "vscode" else "Windows Terminal"
             if QMessageBox.question(
                 self, "Open project",
-                f"Open {project.name} in {target}?\\n{project.path}",
+                f"Open {project.name} in {target}?\n{project.path}",
             ) != QMessageBox.StandardButton.Yes:
                 return
             self._project_launcher.launch(project_id, application)
@@ -2160,7 +2160,7 @@ class DesktopWindow(QMainWindow):
         if draft is not None:
             target = "VS Code" if draft["application"] == "vscode" else "Windows Terminal"
             self.project_draft_description.setText(
-                f'{draft["name"]} → {target}\\n{draft["path"]}\\n'
+                f'{draft["name"]} → {target}\n{draft["path"]}\n'
                 "Nothing opens until you click Open Project."
             )
         self._set_state(self._state)
