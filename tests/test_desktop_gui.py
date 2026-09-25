@@ -844,6 +844,7 @@ def test_focus_context_reveals_real_local_items_and_returns_to_orb(monkeypatch):
     window = DesktopWindow()
     try:
         window.show()
+        window.academic_list.clear()  # Replace the offline placeholder in this fixture.
         window.academic_list.addItem(
             "Brightspace-labeled due (event): Worksheet I - Due\\nSep 25 · 11:59 PM"
         )
