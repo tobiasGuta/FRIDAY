@@ -643,8 +643,8 @@ END:VCALENDAR
 
 
 def test_home_reminders_read_only_local_preview_and_quick_sync(monkeypatch, tmp_path):
-    from datetime import UTC, datetime
     import time
+    from datetime import UTC, datetime
 
     from friday.schedule import ScheduleStore, default_database_path
 
