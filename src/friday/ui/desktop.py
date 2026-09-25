@@ -59,6 +59,7 @@ from friday.ui.brightspace_worker import AcademicSyncThread
 from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.ui.desktop_theme import STYLE
+from friday.ui.hologram_lab import animation_speed, paint_orbital_lab
 from friday.ui.focus_context import focus_ui_target
 from friday.voice_reminders import VoiceReminderApproval
 
@@ -129,6 +130,8 @@ class VoiceOrb(QWidget):
         self.setFixedSize(diameter, diameter)
         self._cinematic = cinematic
         self._hologram = hologram
+        self._experimental = False
+        self._lab_phase = 0.0
         self._phase = 0.0
         self._state = "Disconnected"
         self._timer = QTimer(self)
@@ -145,8 +148,20 @@ class VoiceOrb(QWidget):
         self.setAccessibleDescription(f"FRIDAY voice state: {state}.")
         self.update()
 
+    def set_experimental(self, enabled: bool) -> None:
+        """Swap paint paths only; the accepted Classic renderer is untouched."""
+        self._experimental = bool(enabled) and self._hologram
+        self.update()
+
     def _animate(self) -> None:
-        if self._state in self.ACTIVE_STATES and self.isVisible():
+        if not self.isVisible():
+            return
+        if self._experimental:
+            speed = animation_speed(self._state)
+            if speed > 0:
+                self._lab_phase = (self._lab_phase + 0.06 * speed) % (math.tau * 100)
+                self.update()
+        elif self._state in self.ACTIVE_STATES:
             self._phase = (self._phase + 0.095) % (2 * math.pi)
             self.update()
 
@@ -155,7 +170,10 @@ class VoiceOrb(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.scale(self.width() / 184, self.height() / 184)
         if self._hologram:
-            self._paint_hologram(painter)
+            if self._experimental:
+                paint_orbital_lab(painter, phase=self._lab_phase, state=self._state)
+            else:
+                self._paint_hologram(painter)
             painter.end()
             return
         colors = {
@@ -825,6 +843,15 @@ class DesktopWindow(QMainWindow):
             action.triggered.connect(
                 lambda _checked=False, target=kind: self._show_voice_context(target)
             )
+        menu.addSeparator()
+        self.experimental_hologram_action = menu.addAction(
+            "Experimental orbital hologram · Slice 1"
+        )
+        self.experimental_hologram_action.setCheckable(True)
+        self.experimental_hologram_action.setChecked(False)  # Classic by default.
+        self.experimental_hologram_action.toggled.connect(
+            self._set_experimental_hologram
+        )
         self.focus_panels_button.setMenu(menu)
         focus_toolbar.addWidget(self.focus_panels_button)
         self.focus_dashboard_button = self._open_page_button("Dashboard", "Home")
@@ -999,6 +1026,10 @@ class DesktopWindow(QMainWindow):
         ))
         self._show_voice_context(None)
         self._adapt_voice_layout(self.width())
+
+    def _set_experimental_hologram(self, enabled: bool) -> None:
+        """Display-only toggle: no voice, worker, network or preference writes."""
+        self.orb.set_experimental(enabled)
 
     def _show_voice_context(self, kind: str | None) -> None:
         """Reveal a local view, never take a device, calendar or provider action."""
