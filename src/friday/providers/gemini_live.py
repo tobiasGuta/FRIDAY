@@ -7,7 +7,7 @@ from typing import Any
 from friday.config import Settings
 from friday.core.events import EventKind, SearchSource, VoiceEvent
 from friday.core.provider import ProviderCapabilityError
-from friday.tools.academic_calendar import register_academic_calendar
+from friday.tools.academic_calendar import ACADEMIC_TOOL_NAME, register_academic_calendar
 from friday.tools.builtins import build_builtin_registry
 from friday.tools.search_grounding import extract_search_grounding
 from friday.tools.weather import WEATHER_TOOL_NAME
@@ -382,6 +382,14 @@ class GeminiLiveProvider:
                         else:
                             notice = self._tool_registry.notice_for(name, result)
                         yield VoiceEvent(EventKind.NOTICE, text=notice)
+                        # Only a successfully executed, explicitly registered
+                        # read-only tool can request a local presentation panel.
+                        # This is never an action permission or model-provided URL.
+                        if result.get("status") == "ok":
+                            if name == ACADEMIC_TOOL_NAME:
+                                yield VoiceEvent(EventKind.CONTEXT, context_kind="academic")
+                            elif name == LIST_TOOL_NAME:
+                                yield VoiceEvent(EventKind.CONTEXT, context_kind="reminders")
                     if responses:
                         # Set this before yielding any events from the same SDK
                         # message: a tool call may carry an intermediate completion.
