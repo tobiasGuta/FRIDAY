@@ -139,12 +139,12 @@
 - **Slice 2, implemented on draft branch:** responsive Home voice hero and
   source-backed academic/reminder cards; read-only SQLite preview (no new
   database or startup network), live scheduler summaries and canonical manual
-  sync navigation. Windows visual acceptance pending.
+  sync navigation. Windows visual acceptance reported.
 - **Slice 3, implemented on draft branch:** larger actual-state cinematic orb,
   responsive voice stage, bounded window-only plain-text conversation bubbles,
   collapsible original transcript and local status context. No live audio
   amplitude claims, auto-listening, auto-reconnect, or new model tools. Windows
-  visual/headset acceptance pending.
+  visual/headset acceptance reported.
 - **Slice 4:** Academic cards and course filters only when actual feed data
   supports reliable course association; preserve source-labeled versus
   explicit due semantics.
@@ -152,7 +152,7 @@
 - Offline CI, then Windows layout/headset/tray/credential acceptance are
   required before merging this UI milestone.
 
-## v0.5.6 — Focus Voice Mode (stacked draft)
+## v0.5.6 — Focus Voice Mode (Windows acceptance reported)
 
 - An orb-first Voice page with normal-window near-black canvas, amber
   state-driven Qt rendering, optional concise subtitles and canonical mic and
