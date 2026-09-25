@@ -59,6 +59,7 @@ from friday.ui.brightspace_worker import AcademicSyncThread
 from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.ui.desktop_theme import STYLE
+from friday.ui.focus_context import focus_ui_target
 from friday.voice_reminders import VoiceReminderApproval
 
 
@@ -122,10 +123,12 @@ class VoiceOrb(QWidget):
     def __init__(
         self, parent: QWidget | None = None, *, diameter: int = 184,
         cinematic: bool = False,
+        hologram: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setFixedSize(diameter, diameter)
         self._cinematic = cinematic
+        self._hologram = hologram
         self._phase = 0.0
         self._state = "Disconnected"
         self._timer = QTimer(self)
@@ -151,6 +154,10 @@ class VoiceOrb(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.scale(self.width() / 184, self.height() / 184)
+        if self._hologram:
+            self._paint_hologram(painter)
+            painter.end()
+            return
         colors = {
             "Listening": QColor("#54DFC4"),
             "Responding": QColor("#A18BFF"),
@@ -194,6 +201,73 @@ class VoiceOrb(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(center, 47, 47)
         painter.end()
+
+    def _paint_hologram(self, painter: QPainter) -> None:
+        """Vector-only amber sci-fi visual; not a measured audio waveform."""
+        state_colors = {
+            "Ready": QColor("#F5A843"),
+            "Listening": QColor("#FFD06B"),
+            "Responding": QColor("#FFBB58"),
+            "Connecting": QColor("#C68A52"),
+        }
+        color = state_colors.get(self._state, QColor("#7A6042"))
+        center = QPointF(92, 92)
+        active = self._state in self.ACTIVE_STATES
+        rotation = math.degrees(self._phase) * 0.65 if active else 0.0
+        painter.setPen(Qt.PenStyle.NoPen)
+        for radius, alpha in ((85, 15), (74, 25), (61, 32)):
+            glow = QColor(color)
+            glow.setAlpha(alpha)
+            painter.setBrush(glow)
+            painter.drawEllipse(center, radius, radius)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Fine concentric rings and partial orbits create the hologram-like
+        # feeling without GPU shaders, video files or extra dependencies.
+        for radius, opacity, width in (
+            (82, 85, 0.55), (75, 125, 0.8), (66, 155, 0.65),
+            (56, 180, 1.0), (40, 180, 0.75),
+        ):
+            ring = QColor(color)
+            ring.setAlpha(opacity)
+            painter.setPen(QPen(ring, width))
+            painter.drawEllipse(center, radius, radius)
+        painter.setPen(QPen(color.lighter(120), 1.3))
+        painter.drawArc(
+            QRectF(14, 14, 156, 156),
+            int((rotation + 15) * 16), 92 * 16,
+        )
+        painter.drawArc(
+            QRectF(27, 27, 130, 130),
+            int((210 - rotation * 0.8) * 16), 105 * 16,
+        )
+        painter.drawArc(
+            QRectF(38, 38, 108, 108),
+            int((rotation + 135) * 16), 140 * 16,
+        )
+        # Discrete radial circuit ticks, driven by session state rather than
+        # the microphone or model output. Timer pauses when the orb is hidden.
+        for index in range(64):
+            theta = math.radians(index * (360 / 64) + rotation)
+            outer = 83 if index % 4 == 0 else 79
+            inner = outer - (7 if index % 4 == 0 else 3)
+            stroke = QColor(color)
+            stroke.setAlpha(165 if index % 4 == 0 else 68)
+            painter.setPen(QPen(stroke, 1.1 if index % 4 == 0 else 0.6))
+            painter.drawLine(
+                QPointF(92 + math.cos(theta) * inner, 92 + math.sin(theta) * inner),
+                QPointF(92 + math.cos(theta) * outer, 92 + math.sin(theta) * outer),
+            )
+        painter.setPen(Qt.PenStyle.NoPen)
+        gradient = QRadialGradient(center, 38)
+        gradient.setColorAt(0, QColor("#FFF3CA"))
+        gradient.setColorAt(0.2, color.lighter(155))
+        gradient.setColorAt(0.62, color)
+        gradient.setColorAt(1, QColor("#583014"))
+        painter.setBrush(gradient)
+        painter.drawEllipse(center, 33, 33)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(color.lighter(145), 1))
+        painter.drawEllipse(center, 33, 33)
 
 
 class DesktopThread(QThread):
