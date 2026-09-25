@@ -66,16 +66,22 @@ wait for **Ready** before the next turn. Reminder drafts are on by default and w
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
 
-### Hybrid desktop shell (v0.5.5 Slice 1; Windows visual acceptance pending)
+### Hybrid desktop shell (v0.5.5 Slices 1–2; Windows Slice 2 acceptance pending)
 
 FRIDAY now has a six-page PySide6 Widgets shell: **Home**, **Voice**,
 **Academic**, **Reminders**, **Calendar** and **Settings**. Navigation does not
 start a voice session, a database worker or a network request. The top bar
 mirrors the actual session/scheduler/academic state and computer-local time.
 
-- **Home**: read-only summaries of the current session, locally visible
-  Brightspace items, and the scheduler. The conversation preview is
-  **current-session only** and does not persist a chat history.
+- **Home**: responsive wide/tall cards, a state-mirrored decorative orb, up to
+  three cached Brightspace items with explicit/source-labeled/scheduled types,
+  up to three future pending reminders via a **read-only SQLite connection**,
+  and true scheduler status. The conversation preview is **current-session
+  only** and does not persist a chat history. At narrower window widths the
+  cards stack and the detailed top chips hide (the full states remain on the
+  dedicated pages). The Home Sync now shortcut uses the existing Academic
+  action and navigates to its status; it never starts Gemini or bypasses
+  credential checks.
 - **Voice**: the existing animated orb, one canonical microphone button,
   plain-text transcript, reminder draft Confirm/Cancel controls, and existing
   opt-in reminder/web settings. A new approval draft opens this page so that
@@ -92,8 +98,8 @@ mirrors the actual session/scheduler/academic state and computer-local time.
 
 The UI redraw is intentionally within the existing Qt Widgets framework;
 no new permission, provider integration, paid session behavior, or credential
-storage mechanism is introduced. Desktop layout, cinematic orb polish and
-course grouping can be expanded in subsequent slices. The mockups include
+storage mechanism is introduced. The dedicated cinematic Voice polish and source-supported academic course
+  grouping remain subsequent slices. The mockups include
 illustrative courses/events and controls that must **not** be interpreted as
 implemented data or actions.
 
