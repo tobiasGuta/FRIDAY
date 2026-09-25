@@ -59,8 +59,8 @@ from friday.ui.brightspace_worker import AcademicSyncThread
 from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.ui.desktop_theme import STYLE
-from friday.ui.hologram_lab import animation_speed, paint_orbital_lab
 from friday.ui.focus_context import focus_ui_target
+from friday.ui.hologram_lab import animation_speed, paint_orbital_lab
 from friday.voice_reminders import VoiceReminderApproval
 
 
