@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.6 — Voice Focus Mode (draft; Windows acceptance pending)
+## 0.5.6 — Voice Focus Mode (Windows user acceptance reported; release pending)
 
 - Make the Voice page the opening view while keeping the actual Gemini/microphone
   session disconnected until explicitly connected. Hide dashboard sidebar, top
@@ -21,8 +21,11 @@
   network request. Hide unrelated daily cards even while viewing transcript.
 - Add offline tests for exact UI-only commands, trusted provider hints, no
   unexpected permissions, focus layout, plaintext subtitles and approval.
+- Record exact accepted source SHAs, matching CI and recovery procedure in
+  `docs/ACCEPTED_FOCUS_BASELINE.md`. Earlier intermittent Live turn stalls
+  remain observable through privacy-safe diagnostics; no permanent cure claimed.
 
-## 0.5.5 — Hybrid desktop shell (Slices 1–3; Windows Slice 3 acceptance pending)
+## 0.5.5 — Hybrid desktop shell (Slices 1–3; Windows UI acceptance reported)
 
 - Introduce six navigable PySide6 Widgets pages: Home, Voice, Academic,
   Reminders, Calendar, Settings, with a new dark dashboard style and live
