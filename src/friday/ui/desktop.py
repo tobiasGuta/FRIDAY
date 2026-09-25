@@ -945,6 +945,33 @@ class DesktopWindow(QMainWindow):
         self.voice_columns.addWidget(self.voice_right_host, 6)
         right.addWidget(transcript_panel, 3)
 
+        self.voice_context_panel = self._panel()
+        context_layout = QVBoxLayout(self.voice_context_panel)
+        context_layout.setContentsMargins(18, 16, 18, 16)
+        context_layout.setSpacing(10)
+        self.voice_context_title = QLabel("Context")
+        self.voice_context_title.setObjectName("section")
+        context_layout.addWidget(self.voice_context_title)
+        self.voice_context_notice = self._plain_label(
+            "Only already-authorized, locally available information is displayed."
+        )
+        context_layout.addWidget(self.voice_context_notice)
+        self.voice_context_items = QListWidget()
+        self.voice_context_items.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.voice_context_items.setMinimumHeight(200)
+        context_layout.addWidget(self.voice_context_items, 1)
+        context_actions = QHBoxLayout()
+        self.voice_context_page_button = QPushButton("Open full page")
+        self.voice_context_page_button.clicked.connect(self._open_context_page)
+        context_actions.addWidget(self.voice_context_page_button)
+        self.voice_context_close_button = QPushButton("Back to orb")
+        self.voice_context_close_button.clicked.connect(
+            lambda: self._show_voice_context(None)
+        )
+        context_actions.addWidget(self.voice_context_close_button)
+        context_layout.addLayout(context_actions)
+        right.addWidget(self.voice_context_panel, 3)
+
         glance = self._panel()
         glance_layout = QVBoxLayout(glance)
         glance_layout.setContentsMargins(15, 13, 15, 13)
@@ -964,11 +991,13 @@ class DesktopWindow(QMainWindow):
         context_actions.addWidget(self._open_page_button("Reminders", "Reminders"))
         glance_layout.addLayout(context_actions)
         right.addWidget(glance, 1)
+        self.voice_context_glance = glance
         page.addLayout(self.voice_columns, 1)
         page.addWidget(self._plain_label(
             "Try asking: \"What's due today?\" or \"List my reminders.\" "
             "These are examples, not auto-sent commands."
         ))
+        self._show_voice_context(None)
         self._adapt_voice_layout(self.width())
 
     def _toggle_full_transcript(self, checked: bool) -> None:
