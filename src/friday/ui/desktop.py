@@ -893,20 +893,69 @@ class DesktopWindow(QMainWindow):
             button.setChecked(name == destination)
 
     def _update_local_clock(self) -> None:
-        self.clock_status.setText(
-            datetime.now().astimezone().strftime("%a %b %d · %I:%M %p")
+        local = datetime.now().astimezone()
+        self.clock_status.setText(local.strftime("%a %b %d · %I:%M %p"))
+        greeting = (
+            "Good morning" if local.hour < 12
+            else "Good afternoon" if local.hour < 17 else "Good evening"
         )
+        self.home_greeting.setText(f"{greeting}, Tobias")
 
     def _refresh_home_academic(self) -> None:
-        """Mirror safe visible labels, never retrieve the private feed."""
+        """Render only the already-read local snapshot, never a feed URL or network."""
         self.home_academic_status.setText(self.academic_status.text())
-        items = [
-            self.academic_list.item(i).text().replace("\n", " · ")
-            for i in range(min(3, self.academic_list.count()))
-        ]
+        self._clear_home_rows(self.home_academic_rows)
+        snapshot = self._home_academic_snapshot
+        if snapshot is None:
+            self.home_academic_items.setText("Local academic cache unavailable.")
+            self.home_academic_items.show()
+            return
+        if not snapshot.last_success:
+            self.home_academic_items.setText("No synced Brightspace calendar yet.")
+            self.home_academic_items.show()
+            return
+        if not snapshot.items:
+            self.home_academic_items.setText("No upcoming published calendar items.")
+            self.home_academic_items.show()
+            return
         self.home_academic_items.setText(
-            "\n".join(items) if items else "No locally cached academic items."
+            f"{len(snapshot.items)} upcoming published calendar item(s) in the next 7 days."
         )
+        self.home_academic_items.show()
+        for item in snapshot.items[:3]:
+            label = (
+                "Due (task)" if item.explicit_due
+                else "Brightspace-labeled due (event)" if source_labeled_due(item)
+                else "Scheduled"
+            )
+            if item.recurring:
+                label += " · recurring series (not expanded)"
+            self.home_academic_rows.addWidget(
+                self._home_summary_row(item.title, display_time(item), tag=label)
+            )
+
+    def _refresh_home_reminders(self) -> None:
+        """Read local future reminders without initializing or migrating SQLite."""
+        try:
+            count, records = read_pending_reminder_preview(limit=3)
+        except (OSError, sqlite3.Error, ValueError):
+            self.home_reminder_status.setText("Local reminders unavailable.")
+            self.home_reminder_items.setText("See Reminders for the current voice list.")
+            self.home_reminder_items.show()
+            self._clear_home_rows(self.home_reminder_rows)
+            return
+        self.home_reminder_status.setText(f"{count} pending reminder(s) in local storage.")
+        self._clear_home_rows(self.home_reminder_rows)
+        self.home_reminder_items.setText(
+            "No pending reminders." if not count
+            else f"Showing {len(records)} of {count} upcoming reminder(s)."
+        )
+        self.home_reminder_items.show()
+        for text, due_at in records:
+            when = datetime.fromtimestamp(due_at).astimezone()
+            self.home_reminder_rows.addWidget(self._home_summary_row(
+                text, when.strftime("%a, %b %d · %I:%M %p"), tag="Local reminder"
+            ))
 
     def _init_tray(self) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -985,10 +1034,12 @@ class DesktopWindow(QMainWindow):
             self.academic_status.setText("Brightspace: local cache unavailable")
             self.academic_list.clear()
             self._academic_cache_ready = False
+            self._home_academic_snapshot = None
             self.academic_voice_option.setEnabled(False)
             self._refresh_academic_overview()
             return
         self._academic_cache_ready = bool(last)
+        self._home_academic_snapshot = snapshot
         self.academic_list.clear()
         for item in snapshot.items:
             label = (
@@ -1068,6 +1119,7 @@ class DesktopWindow(QMainWindow):
         for widget in (
             self.academic_save_button, self.academic_sync_button,
             self.academic_forget_button, self.academic_feed_input,
+            self.home_sync_button,
         ):
             widget.setEnabled(active)
 
@@ -1170,6 +1222,7 @@ class DesktopWindow(QMainWindow):
             "Scheduler: " + label.removeprefix("Calendar: ")
         )
         self.home_scheduler_status.setText(label)
+        self._refresh_home_reminders()
         self._update_tray_tooltip()
 
     def _start_or_stop_scheduler(self) -> None:
@@ -1241,6 +1294,14 @@ class DesktopWindow(QMainWindow):
         self._state = state
         self.status.setText(state)
         self.home_voice_state.setText(f"Voice · {state}")
+        self.home_voice_title.setText(
+            "Ready when you are" if state == "Ready"
+            else "Listening…" if state == "Listening"
+            else "FRIDAY is responding" if state == "Responding"
+            else "Connect to start talking" if state == "Disconnected"
+            else state
+        )
+        self.home_orb.set_state(state)
         self.orb.set_state(state)
         self._update_tray_tooltip()
         captions = {
@@ -1383,6 +1444,7 @@ class DesktopWindow(QMainWindow):
             self.home_reminder_status.setText(
                 f"{len(value)} pending reminder(s) reported by the current voice session."
             )
+            self._refresh_home_reminders()
         elif kind == "sources":
             for item in value:
                 self._append("Source", f"{item['title']} — {item['url']}")
@@ -1399,6 +1461,7 @@ class DesktopWindow(QMainWindow):
                 self._append(
                     "Not saved", str(value.get("error", "Unable to apply the draft"))
                 )
+            self._refresh_home_reminders()
 
     def _worker_finished(self) -> None:
         if self._worker is not None:
