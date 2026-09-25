@@ -1,7 +1,5 @@
 """Model can draft a project launch, never directly execute it."""
 
-import pytest
-
 from friday.config import Settings
 from friday.providers.gemini_live import GeminiLiveProvider
 from friday.tools.project_launcher import ProjectLauncher
