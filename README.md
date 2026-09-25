@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.5.6 Focus Voice is under release review; v0.5.5 hybrid dashboard is merged. The earlier voice, academic, reminder and scheduler functionality remains intact.**
+A harness-first personal AI assistant. **v0.5.6 Focus Voice is merged into main, following v0.5.5 hybrid dashboard. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.5.6 development branch)
+## What works today (v0.5.6)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -44,7 +44,7 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
-## FRIDAY desktop interface (v0.5.6 development branch)
+## FRIDAY desktop interface (v0.5.6)
 
 The optional PySide6 shell provides click-to-talk, an animated voice orb, plain-text
 transcripts, an upcoming-reminders list and app-owned **Confirm / Cancel** controls.
@@ -66,7 +66,7 @@ wait for **Ready** before the next turn. Reminder drafts are on by default and w
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
 
-### Focus Voice Mode (v0.5.6; Windows acceptance reported, release promotion pending)
+### Focus Voice Mode (v0.5.6; Windows acceptance reported)
 
 Opening the app shows the **Voice page** in a minimal near-black focus view:
 an enlarged locally painted amber orbital visualization, current state,
@@ -102,9 +102,9 @@ is introduced by panel navigation.
 The user-reported Windows acceptance, exact preserved source revisions,
 regression gates and safe rollback steps are recorded in
 [the accepted Focus baseline](docs/ACCEPTED_FOCUS_BASELINE.md). PR #9 is
-merged into `main`; PR #10 now targets `main` and remains under release
-review. The earlier intermittent Gemini turn stall is not conclusively
-root-caused.
+merged into `main`, followed by PR #10. The accepted source and merged
+release are preserved as stable Git branches. The earlier intermittent
+Gemini turn stall is not conclusively root-caused.
 
 ### Hybrid desktop shell (v0.5.5 Slices 1–3; Windows visual acceptance reported)
 
