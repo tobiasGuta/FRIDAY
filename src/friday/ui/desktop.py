@@ -1441,10 +1441,10 @@ class DesktopWindow(QMainWindow):
                 )
             if not value:
                 self.reminder_list.addItem("No pending reminders")
+            self._refresh_home_reminders()
             self.home_reminder_status.setText(
                 f"{len(value)} pending reminder(s) reported by the current voice session."
             )
-            self._refresh_home_reminders()
         elif kind == "sources":
             for item in value:
                 self._append("Source", f"{item['title']} — {item['url']}")
