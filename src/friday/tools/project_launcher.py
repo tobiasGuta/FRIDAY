@@ -38,7 +38,7 @@ def _installed_executable(application: Application) -> Path:
         candidates.append(Path(match))
     for candidate in candidates:
         if candidate.is_file() and candidate.suffix.casefold() == ".exe":
-            return candidate.resolve()
+            return candidate
     label = "Visual Studio Code" if application == "vscode" else "Windows Terminal"
     raise ProjectError(f"{label} is not installed or its launcher is unavailable.")
 
