@@ -306,6 +306,10 @@ class DesktopWindow(QMainWindow):
         self._academic_timer.timeout.connect(self._auto_sync_brightspace)
         self._academic_timer.start()
         self._display_academic_cached()
+        self._clock_timer = QTimer(self)
+        self._clock_timer.setInterval(30_000)
+        self._clock_timer.timeout.connect(self._update_local_clock)
+        self._clock_timer.start()
 
     @staticmethod
     def _panel() -> QFrame:
@@ -810,6 +814,7 @@ class DesktopWindow(QMainWindow):
         self._quitting = True
         self._health_timer.stop()
         self._academic_timer.stop()
+        self._clock_timer.stop()
         if self._scheduler is not None:
             self._scheduler.request_stop()
             self._scheduler_stop_requested = True
@@ -826,6 +831,7 @@ class DesktopWindow(QMainWindow):
             return
         self._health_timer.stop()
         self._academic_timer.stop()
+        self._clock_timer.stop()
         if self._tray is not None:
             self._tray.hide()
         app = QApplication.instance()
@@ -843,6 +849,7 @@ class DesktopWindow(QMainWindow):
             self.academic_list.clear()
             self._academic_cache_ready = False
             self.academic_voice_option.setEnabled(False)
+            self._refresh_academic_overview()
             return
         self._academic_cache_ready = bool(last)
         self.academic_list.clear()
@@ -873,6 +880,18 @@ class DesktopWindow(QMainWindow):
         self._set_state(self._state)
         if not last:
             self.academic_voice_option.setChecked(False)
+        self._refresh_academic_overview()
+
+    def _refresh_academic_overview(self) -> None:
+        status = self.academic_status.text()
+        if "failed" in status.lower():
+            label = "Brightspace: sync failed (cache retained)"
+        elif self._academic_cache_ready:
+            label = "Brightspace: cached"
+        else:
+            label = "Brightspace: not synced"
+        self.top_academic_status.setText(label)
+        self._refresh_home_academic()
 
     def _save_academic_feed(self) -> None:
         if self._academic_sync is not None or self._quitting or self._closing:
@@ -892,6 +911,7 @@ class DesktopWindow(QMainWindow):
         self.academic_status.setText(
             "Brightspace feed saved in protected storage. Click Sync now."
         )
+        self._refresh_academic_overview()
 
     def _sync_academic(self) -> None:
         if self._academic_sync is not None or self._quitting or self._closing:
@@ -902,6 +922,7 @@ class DesktopWindow(QMainWindow):
         thread.finished.connect(self._academic_finished)
         self._academic_sync = thread
         self.academic_status.setText("Brightspace: synchronizing…")
+        self._refresh_academic_overview()
         self._academic_controls_enabled(False)
         thread.start()
 
@@ -922,6 +943,7 @@ class DesktopWindow(QMainWindow):
         self.academic_status.setText(
             f"Brightspace sync failed: {message} Previous cached data, if any, is unchanged."
         )
+        self._refresh_academic_overview()
 
     def _academic_finished(self) -> None:
         if self._academic_sync is not None:
@@ -1007,6 +1029,10 @@ class DesktopWindow(QMainWindow):
                     "Use the existing foreground CLI worker on this platform."
                 )
         self.calendar_status.setText(label)
+        self.top_scheduler_status.setText(
+            "Scheduler: " + label.removeprefix("Calendar: ")
+        )
+        self.home_scheduler_status.setText(label)
         self._update_tray_tooltip()
 
     def _start_or_stop_scheduler(self) -> None:
@@ -1053,6 +1079,7 @@ class DesktopWindow(QMainWindow):
     def _scheduler_notice_received(self, message: str) -> None:
         self._scheduler_had_error = True
         self.scheduler_notice.setText(message)
+        self.home_scheduler_status.setText(message)
 
     def _scheduler_finished(self) -> None:
         if self._scheduler is not None:
@@ -1076,6 +1103,7 @@ class DesktopWindow(QMainWindow):
     def _set_state(self, state: str) -> None:
         self._state = state
         self.status.setText(state)
+        self.home_voice_state.setText(f"Voice · {state}")
         self.orb.set_state(state)
         self._update_tray_tooltip()
         captions = {
@@ -1184,6 +1212,9 @@ class DesktopWindow(QMainWindow):
                 description + "\nNothing changes until you confirm."
             )
         self._set_state(self._state)
+        if draft is not None:
+            # Keep the only approval controls visible without duplicating actions.
+            self._navigate("Voice")
 
     def _on_event(self, kind: str, value: Any) -> None:
         if kind == "status":
@@ -1193,7 +1224,11 @@ class DesktopWindow(QMainWindow):
                 self._last_recovery = value
         elif kind == "transcript":
             speaker = value.get("speaker")
-            self._append("You" if speaker == "user" else "FRIDAY", value.get("text", ""))
+            text = value.get("text", "")
+            self._append("You" if speaker == "user" else "FRIDAY", text)
+            if isinstance(text, str) and text.strip():
+                prefix = "You" if speaker == "user" else "FRIDAY"
+                self.home_recent.setText(f"{prefix}: {text.strip()[:240]}")
         elif kind == "notice":
             self._append("System", str(value))
         elif kind == "error":
@@ -1208,6 +1243,9 @@ class DesktopWindow(QMainWindow):
                 )
             if not value:
                 self.reminder_list.addItem("No pending reminders")
+            self.home_reminder_status.setText(
+                f"{len(value)} pending reminder(s) reported by the current voice session."
+            )
         elif kind == "sources":
             for item in value:
                 self._append("Source", f"{item['title']} — {item['url']}")
@@ -1264,6 +1302,7 @@ class DesktopWindow(QMainWindow):
             return
         self._health_timer.stop()
         self._academic_timer.stop()
+        self._clock_timer.stop()
         event.accept()
 
 
