@@ -1132,6 +1132,7 @@ class DesktopWindow(QMainWindow):
             self.home_reminder_rows.addWidget(self._home_summary_row(
                 text, when.strftime("%a, %b %d · %I:%M %p"), tag="Local reminder"
             ))
+        self._refresh_voice_context()
 
     def _init_tray(self) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -1256,6 +1257,7 @@ class DesktopWindow(QMainWindow):
             label = "Brightspace: not synced"
         self.top_academic_status.setText(label)
         self._refresh_home_academic()
+        self._refresh_voice_context()
 
     def _save_academic_feed(self) -> None:
         if self._academic_sync is not None or self._quitting or self._closing:
@@ -1399,6 +1401,7 @@ class DesktopWindow(QMainWindow):
         )
         self.home_scheduler_status.setText(label)
         self._refresh_home_reminders()
+        self._refresh_voice_context()
         self._update_tray_tooltip()
 
     def _start_or_stop_scheduler(self) -> None:
@@ -1465,6 +1468,7 @@ class DesktopWindow(QMainWindow):
     def _append(self, label: str, text: str) -> None:
         if text:
             self.transcript.appendPlainText(f"{label}: {text}")
+            self._append_voice_bubble(label, text)
 
     def _set_state(self, state: str) -> None:
         self._state = state
@@ -1479,6 +1483,24 @@ class DesktopWindow(QMainWindow):
         )
         self.home_orb.set_state(state)
         self.orb.set_state(state)
+        self.voice_state_badge.setText(state)
+        phase = (
+            state if state in {"Listening", "Responding", "Ready"}
+            else "Inactive"
+        )
+        self.voice_state_badge.setProperty("phase", phase)
+        self.voice_state_badge.style().unpolish(self.voice_state_badge)
+        self.voice_state_badge.style().polish(self.voice_state_badge)
+        activities = {
+            "Ready": "Microphone off · click Start talking when ready.",
+            "Listening": "Recording is active · click Stop recording to finish.",
+            "Responding": "FRIDAY is replying · microphone recording is off.",
+            "Connecting": "Establishing your voice connection…",
+            "Disconnecting": "Closing the voice session…",
+        }
+        self.voice_activity.setText(
+            activities.get(state, "Microphone off · no automatic reconnection.")
+        )
         self._update_tray_tooltip()
         captions = {
             "Disconnected": ("FRIDAY is offline", "Connect when you're ready."),
@@ -1621,6 +1643,7 @@ class DesktopWindow(QMainWindow):
             self.home_reminder_status.setText(
                 f"{len(value)} pending reminder(s) reported by the current voice session."
             )
+            self._refresh_voice_context()
         elif kind == "sources":
             for item in value:
                 self._append("Source", f"{item['title']} — {item['url']}")
