@@ -569,3 +569,109 @@ def test_home_academic_summary_is_from_local_visible_records_only(monkeypatch, t
         assert not (tmp_path / "FRIDAY" / "brightspace.sqlite3").exists()
     finally:
         window.close()
+
+
+def test_home_polish_mirrors_voice_state_and_resizes_without_new_workers():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window.show()
+        window._on_event("status", "Listening")
+        assert window.home_orb._state == "Listening"
+        assert window.home_voice_title.text() == "Listening…"
+        window.resize(1000, 760)
+        app.processEvents()
+        assert window.home_columns.direction() == desktop.QBoxLayout.Direction.TopToBottom
+        assert window.top_academic_status.isHidden()
+        window.resize(1330, 850)
+        app.processEvents()
+        assert window.home_columns.direction() == desktop.QBoxLayout.Direction.LeftToRight
+        assert not window.top_academic_status.isHidden()
+        assert window._worker is None
+        assert window._scheduler is None
+        assert window._academic_sync is None
+    finally:
+        window.close()
+
+
+def test_home_academic_cards_preserve_source_due_distinctions(monkeypatch, tmp_path):
+    from friday.brightspace_calendar import AcademicSnapshot, AcademicStore, parse_calendar
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    sample = b"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:label
+DTSTART:20261005T235900Z
+SUMMARY:Worksheet I - Due
+END:VEVENT
+BEGIN:VTODO
+UID:explicit
+DUE;VALUE=DATE:20261006
+SUMMARY:Submit lab
+END:VTODO
+BEGIN:VEVENT
+UID:lecture
+DTSTART:20261007T140000Z
+SUMMARY:Class meeting
+END:VEVENT
+END:VCALENDAR
+"""
+    snapshot = AcademicSnapshot(
+        parse_calendar(sample),
+        "2026-09-24T23:00:00+00:00",
+    )
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        monkeypatch.setattr(AcademicStore, "upcoming", lambda self, **_kwargs: snapshot)
+        window._display_academic_cached()
+        assert window.home_academic_rows.count() == 3
+        labels = [
+            window.home_academic_rows.itemAt(i).widget().findChildren(desktop.QLabel)
+            for i in range(3)
+        ]
+        assert any("Brightspace-labeled due (event)" in x.text() for x in labels[0])
+        assert any("Due (task)" in x.text() for x in labels[1])
+        assert any("Scheduled" in x.text() for x in labels[2])
+        assert not (tmp_path / "FRIDAY" / "brightspace.sqlite3").exists()
+    finally:
+        window.close()
+
+
+def test_home_reminders_read_only_local_preview_and_quick_sync(monkeypatch, tmp_path):
+    from datetime import UTC, datetime
+    import time
+
+    from friday.schedule import ScheduleStore, default_database_path
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    now = time.time()
+    store = ScheduleStore(default_database_path())
+    due = datetime.fromtimestamp(now + 3600, UTC).isoformat()
+    store.reminder(due, "Read chapter", now=now)
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._refresh_home_reminders()
+        assert "1 pending" in window.home_reminder_status.text()
+        assert window.home_reminder_rows.count() == 1
+        assert "Read chapter" in [
+            label.text()
+            for label in window.home_reminder_rows.itemAt(0).widget()
+            .findChildren(desktop.QLabel)
+        ]
+        calls = []
+        monkeypatch.setattr(window, "_sync_academic", lambda: calls.append("sync"))
+        window._navigate("Home")
+        window.home_sync_button.click()
+        assert calls == ["sync"]
+        assert window.page_title.text() == "Academic"
+        assert window._worker is None
+    finally:
+        window.close()
