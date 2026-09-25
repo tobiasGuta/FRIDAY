@@ -131,6 +131,7 @@ class VoiceOrb(QWidget):
         self._cinematic = cinematic
         self._hologram = hologram
         self._experimental = False
+        self._particles = False
         self._lab_phase = 0.0
         self._phase = 0.0
         self._state = "Disconnected"
@@ -151,6 +152,13 @@ class VoiceOrb(QWidget):
     def set_experimental(self, enabled: bool) -> None:
         """Swap paint paths only; the accepted Classic renderer is untouched."""
         self._experimental = bool(enabled) and self._hologram
+        if not self._experimental:
+            self._particles = False
+        self.update()
+
+    def set_particles(self, enabled: bool) -> None:
+        """Optional paint-only energy layer; available in experimental mode."""
+        self._particles = bool(enabled) and self._experimental
         self.update()
 
     def _animate(self) -> None:
@@ -171,7 +179,10 @@ class VoiceOrb(QWidget):
         painter.scale(self.width() / 184, self.height() / 184)
         if self._hologram:
             if self._experimental:
-                paint_orbital_lab(painter, phase=self._lab_phase, state=self._state)
+                paint_orbital_lab(
+                    painter, phase=self._lab_phase, state=self._state,
+                    particles=self._particles,
+                )
             else:
                 self._paint_hologram(painter)
             painter.end()
@@ -852,6 +863,13 @@ class DesktopWindow(QMainWindow):
         self.experimental_hologram_action.toggled.connect(
             self._set_experimental_hologram
         )
+        self.energy_particles_action = menu.addAction(
+            "Floating energy particles · Slice 2A"
+        )
+        self.energy_particles_action.setCheckable(True)
+        self.energy_particles_action.setChecked(False)
+        self.energy_particles_action.setEnabled(False)
+        self.energy_particles_action.toggled.connect(self._set_energy_particles)
         self.focus_panels_button.setMenu(menu)
         focus_toolbar.addWidget(self.focus_panels_button)
         self.focus_dashboard_button = self._open_page_button("Dashboard", "Home")
@@ -1030,6 +1048,13 @@ class DesktopWindow(QMainWindow):
     def _set_experimental_hologram(self, enabled: bool) -> None:
         """Display-only toggle: no voice, worker, network or preference writes."""
         self.orb.set_experimental(enabled)
+        self.energy_particles_action.setEnabled(enabled)
+        if not enabled:
+            self.energy_particles_action.setChecked(False)
+
+    def _set_energy_particles(self, enabled: bool) -> None:
+        """Toggle decorative particles without changing voice or other services."""
+        self.orb.set_particles(enabled)
 
     def _show_voice_context(self, kind: str | None) -> None:
         """Reveal a local view, never take a device, calendar or provider action."""

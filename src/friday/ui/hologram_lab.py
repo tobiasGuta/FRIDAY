@@ -1,4 +1,4 @@
-"""Experimental Qt-painted orbital hologram (Slice 1).
+"""Experimental Qt-painted orbital hologram (Slice 1 + optional Slice 2A particles).
 
 Pure presentation. No microphone amplitude, SDK data, GPU assets or network access.
 The accepted v0.5.6 hologram renderer remains a separate, unchanged fallback.
@@ -67,7 +67,34 @@ def _orbit(
     painter.restore()
 
 
-def paint_orbital_lab(painter: QPainter, *, phase: float, state: str) -> None:
+
+
+def _paint_particles(painter: QPainter, *, phase: float, energy: float) -> None:
+    """Sparse, reproducible ambient points; no audio input or random state."""
+    painter.save()
+    painter.setPen(Qt.PenStyle.NoPen)
+    # Golden-angle spacing avoids clumps without persistent objects or randomness.
+    # Each dot stays outside the luminous center and within the 184px canvas.
+    for index in range(18):
+        theta = index * 2.399963229728653 + phase * (0.10 if index % 2 else -0.075)
+        radius = 69 + (index * 11 % 19)
+        point = QPointF(
+            _CENTER.x() + math.cos(theta) * radius,
+            _CENTER.y() + math.sin(theta) * radius * 0.79,
+        )
+        shimmer = 0.65 + 0.35 * math.sin(phase * 0.47 + index * 1.37)
+        alpha = round((100 + 64 * shimmer) * energy)
+        size = 1.15 if index % 5 == 0 else 0.7
+        painter.setBrush(_tint("#F7A64D", round(alpha * 0.22)))
+        painter.drawEllipse(point, size + 1.6, size + 1.6)
+        painter.setBrush(_tint("#FFE4A8", alpha))
+        painter.drawEllipse(point, size, size)
+    painter.restore()
+
+
+def paint_orbital_lab(
+    painter: QPainter, *, phase: float, state: str, particles: bool = False
+) -> None:
     """Draw the optional v0.5.7 renderer in the existing 184x184 orb coordinate space."""
     energy = _STATE_ENERGY.get(state, 0.3)
     breathing = (1.0 + math.sin(phase * 0.85)) / 2.0
@@ -96,8 +123,7 @@ def paint_orbital_lab(painter: QPainter, *, phase: float, state: str) -> None:
         speed=0.22, offset=4.7, energy=energy,
     )
 
-    # Restrained fixed circuit ticks. A separate fragment/particle field is
-    # deliberately deferred to Slice 2, after Windows visual acceptance.
+    # Restrained fixed circuit ticks are part of the accepted Slice 1 renderer.
     for index in range(48):
         theta = math.tau * index / 48 + phase * 0.10
         radius = 80 if index % 4 == 0 else 78
@@ -114,6 +140,9 @@ def paint_orbital_lab(painter: QPainter, *, phase: float, state: str) -> None:
                 _CENTER.y() + math.sin(theta) * radius,
             ),
         )
+
+    if particles and state not in {"Disconnected", "Disconnecting"}:
+        _paint_particles(painter, phase=phase, energy=energy)
 
     # The center breathes slightly at rest and becomes brighter while speaking.
     painter.setPen(Qt.PenStyle.NoPen)

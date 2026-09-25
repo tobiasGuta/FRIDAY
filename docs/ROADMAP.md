@@ -180,7 +180,11 @@
   Classic v0.5.6 renderer remains default with immediate UI fallback.
 - Offline pixel-difference, hidden/idle behavior and no-new-session checks;
   Windows visual/headset acceptance needed before considering release.
-- Slice 2 (not implemented): restrained separate particle/fragment field.
+- Slice 2A (implemented on separate experimental branch; Windows review pending):
+  18 sparse floating golden particles in an independent paint-only toggle;
+  Classic remains unchanged and both optional effects default off.
+- Slice 2B/2C (not implemented): circuit fragments and subtle light trails,
+  only after reviewing Slice 2A on Windows.
 - Slice 3 (not implemented): richer motion state transitions and reduced-motion
   preference; evaluate performance rather than assume smoothness.
 

@@ -68,7 +68,7 @@ wait for **Ready** before the next turn. Reminder drafts are on by default and w
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
 
-### Hologram Lab (v0.5.7 Slice 1, experimental)
+### Hologram Lab (v0.5.7 Slice 1 + optional Slice 2A, experimental)
 
 In Focus Voice Mode, open **Panels → Experimental orbital hologram · Slice 1**
 to toggle the new visual renderer. Uncheck it to return immediately to the
@@ -80,8 +80,17 @@ circuit ticks and a layered breathing amber core using Qt QPainter. The
 rendering responds only to the actual connection/Ready/Listening/Responding
 state, **not** microphone volume or generated audio. An idle experimental orb
 animates gently only while visible; disconnected or hidden views do not
-advance. Particles, shaders, 3D, desktop overlays and true audio-reactive
-visualization are *not* part of this slice. It adds no API calls or dependencies.
+advance.
+
+After enabling the experimental orbital renderer, check **Panels → Floating
+energy particles · Slice 2A** to add 18 sparse golden points with slow,
+deterministic drift and shimmer around the existing rings. This second toggle
+is off by default, is unavailable in Classic, and resets when the experimental
+renderer is switched off or the app relaunches. Particles do not show when
+disconnected; the existing state-driven brightness gives them a warmer, stronger
+presence while listening/responding. No circuit fragments or light trails are
+added in Slice 2A. Neither slice adds shaders, 3D, desktop overlays, actual
+audio-reactive visualization, API calls, persistence or dependencies.
 
 To validate, run the offline tests first, then test switching between the
 two orb renderers during an ordinary Windows session. Verify manual Connect,
