@@ -19,7 +19,9 @@
   academic agenda, source freshness display, optional 30-minute background
   refresh while the desktop scheduler runs, and opt-in read-only voice lookup.
 - Keep Gemini disconnected by default and use cached bounded tool responses
-  only when the user enables academic voice lookup before connecting.
+  only when the user enables academic voice lookup before connecting. Convert
+  the stored UTC sync instant to the computer's local date/time for spoken
+  freshness reports, avoiding midnight UTC date rollover.
 - Cover fixtures, credential handling, HTTPS rejection, cache behavior and
   desktop controls offline. Production feed and Windows credential-store
   acceptance remain pending.
