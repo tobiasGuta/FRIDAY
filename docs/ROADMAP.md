@@ -136,8 +136,10 @@
   dashboard shell, with canonical voice / reminder / Brightspace / scheduler
   controls moved intact. Mirror live state; no new tool permissions, network
   calls on startup, or persistent chat history.
-- **Slice 2:** improve Home's adaptive card layout and hierarchy; no invented
-  Google Calendar events or reminder approvals.
+- **Slice 2, implemented on draft branch:** responsive Home voice hero and
+  source-backed academic/reminder cards; read-only SQLite preview (no new
+  database or startup network), live scheduler summaries and canonical manual
+  sync navigation. Windows visual acceptance pending.
 - **Slice 3:** state-driven cinematic orb and richer session-only conversation
   presentation; preserve click-to-talk, bounded audio and manual reconnect.
 - **Slice 4:** Academic cards and course filters only when actual feed data
