@@ -103,7 +103,7 @@ storage mechanism is introduced. The dedicated cinematic Voice polish and source
 illustrative courses/events and controls that must **not** be interpreted as
 implemented data or actions.
 
-### Brightspace calendar (v0.5.4; live Windows acceptance pending)
+### Brightspace calendar (introduced in v0.5.4; Windows feed accepted)
 
 The optional `brightspace` extra provides iCalendar parsing, HTTPS retrieval
 and protected credential storage. This is **not** an official Brightspace OAuth
@@ -115,7 +115,8 @@ Brightspace Calendar tool.
    **All Calendars and Tasks**. Keep its private subscription URL secret.
 2. Quit FRIDAY completely from the system tray, install the extras shown above,
    and relaunch the desktop shortcut.
-3. Open the **Brightspace** tab under the conversation panel. Paste the URL
+3. Open **Academic** from the v0.5.5 sidebar (the older v0.5.4 interface
+   used a Brightspace tab under Conversation). Paste the URL
    **only into FRIDAY's masked field**, then click **Save feed**. The URL is
    written to the OS credential vault, not to the repository or a plaintext
    configuration. If protected storage is unavailable, saving fails closed.
