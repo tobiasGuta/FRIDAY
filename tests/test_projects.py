@@ -1,6 +1,5 @@
 """Offline dynamic project catalog and launch-boundary regression tests."""
 
-import json
 from pathlib import Path
 
 import pytest
