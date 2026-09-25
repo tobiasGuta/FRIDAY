@@ -13,8 +13,8 @@ import threading
 from datetime import datetime
 from typing import Any
 
-from PySide6.QtCore import QPointF, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QRadialGradient
+from PySide6.QtCore import QPointF, QRectF, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QRadialGradient
 from PySide6.QtWidgets import (
     QApplication,
     QBoxLayout,
@@ -111,31 +111,45 @@ def _calendar_label(health: WorkerHealth) -> str:
 
 
 class VoiceOrb(QWidget):
-    """A light-weight painted indicator; no media, microphone, or model ownership."""
+    """A visual indicator of *actual* session states, never an audio-level meter.
 
-    def __init__(self, parent: QWidget | None = None, *, diameter: int = 184) -> None:
+    Animation is local Qt paint work; it never opens audio or a model connection.
+    The cinematic variant is larger and has decorative rotating arcs.
+    """
+
+    ACTIVE_STATES = frozenset({"Listening", "Responding", "Connecting"})
+
+    def __init__(
+        self, parent: QWidget | None = None, *, diameter: int = 184,
+        cinematic: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.setFixedSize(diameter, diameter)
+        self._cinematic = cinematic
         self._phase = 0.0
         self._state = "Disconnected"
         self._timer = QTimer(self)
-        self._timer.setInterval(70)
+        self._timer.setInterval(60 if cinematic else 70)
         self._timer.timeout.connect(self._animate)
         self._timer.start()
+        self.setAccessibleName("FRIDAY voice state orb")
+        self.setAccessibleDescription(
+            "Decorative animation reflects the connection, listening, or responding state."
+        )
 
     def set_state(self, state: str) -> None:
         self._state = state
+        self.setAccessibleDescription(f"FRIDAY voice state: {state}.")
         self.update()
 
     def _animate(self) -> None:
-        if self._state in {"Listening", "Responding", "Connecting"}:
-            self._phase += 0.12
+        if self._state in self.ACTIVE_STATES and self.isVisible():
+            self._phase = (self._phase + 0.095) % (2 * math.pi)
             self.update()
 
     def paintEvent(self, _event: Any) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
         painter.scale(self.width() / 184, self.height() / 184)
         colors = {
             "Listening": QColor("#54DFC4"),
@@ -145,20 +159,40 @@ class VoiceOrb(QWidget):
         }
         color = colors.get(self._state, QColor("#4D627F"))
         center = QPointF(92, 92)
-        pulse = 5.0 * (1.0 + math.sin(self._phase)) if self._state in {
-            "Listening", "Responding", "Connecting"
-        } else 0.0
-        for radius, alpha in ((76 + pulse, 25), (63 + pulse * 0.6, 48)):
-            ring = QColor(color)
-            ring.setAlpha(alpha)
-            painter.setBrush(ring)
+        active = self._state in self.ACTIVE_STATES
+        pulse = 5.0 * (1.0 + math.sin(self._phase)) if active else 0.0
+        painter.setPen(Qt.PenStyle.NoPen)
+        for radius, alpha in ((77 + pulse, 22), (64 + pulse * 0.6, 48)):
+            glow = QColor(color)
+            glow.setAlpha(alpha)
+            painter.setBrush(glow)
             painter.drawEllipse(center, radius, radius)
-        gradient = QRadialGradient(center, 49)
-        gradient.setColorAt(0, QColor("#EDF9FF"))
-        gradient.setColorAt(0.25, color.lighter(150))
-        gradient.setColorAt(1, color.darker(125))
+        if self._cinematic:
+            # Decorative rings: deliberately NOT a microphone amplitude visualization.
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            for radius, opacity, width in ((80, 85, 1.8), (68, 115, 1.2)):
+                ring = QColor(color)
+                ring.setAlpha(opacity)
+                painter.setPen(QPen(ring, width))
+                painter.drawEllipse(center, radius, radius)
+            painter.setPen(QPen(color.lighter(135), 2.2))
+            rotation = int(math.degrees(self._phase) * 16)
+            painter.drawArc(QRectF(14, 14, 156, 156), rotation, 100 * 16)
+            painter.drawArc(QRectF(27, 27, 130, 130), rotation + 180 * 16, 78 * 16)
+            painter.setPen(Qt.PenStyle.NoPen)
+        gradient = QRadialGradient(center, 50)
+        gradient.setColorAt(0, QColor("#F3FCFF"))
+        gradient.setColorAt(0.2, color.lighter(170))
+        gradient.setColorAt(0.7, color)
+        gradient.setColorAt(1, color.darker(155))
         painter.setBrush(gradient)
-        painter.drawEllipse(center, 46, 46)
+        painter.drawEllipse(center, 47, 47)
+        if self._cinematic:
+            halo = QColor("#FFFFFF")
+            halo.setAlpha(165 if active else 95)
+            painter.setPen(QPen(halo, 1.0))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(center, 47, 47)
         painter.end()
 
 
