@@ -37,3 +37,34 @@ def test_interrupt_goaway_are_normalized_without_executing_tools():
     # Tool requests are handled at the provider/allowlist boundary, not in
     # this pure media normalizer.
     assert [e.kind for e in events] == [EventKind.INTERRUPTED, EventKind.NOTICE]
+
+
+def test_generation_complete_is_not_a_final_turn_completion():
+    content = Obj(
+        input_transcription=None,
+        output_transcription=Obj(text="Good evening."),
+        model_turn=None,
+        interrupted=False,
+        generation_complete=True,
+        turn_complete=False,
+    )
+    events = list(normalize_gemini_message(Obj(server_content=content)))
+    assert [event.kind for event in events] == [
+        EventKind.TRANSCRIPT, EventKind.GENERATION_COMPLETE
+    ]
+    assert EventKind.TURN_COMPLETE not in [event.kind for event in events]
+
+
+def test_generation_and_turn_completion_remain_distinct_in_combined_message():
+    content = Obj(
+        input_transcription=None,
+        output_transcription=None,
+        model_turn=None,
+        interrupted=False,
+        generation_complete=True,
+        turn_complete=True,
+    )
+    events = list(normalize_gemini_message(Obj(server_content=content)))
+    assert [event.kind for event in events] == [
+        EventKind.GENERATION_COMPLETE, EventKind.TURN_COMPLETE
+    ]
