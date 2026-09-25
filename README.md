@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.5.5 is a draft hybrid desktop shell: Home, Voice, Academic, Reminders, Calendar and Settings preserve the working v0.5.4 capabilities.**
+A harness-first personal AI assistant. **v0.5.6 Focus Voice is under release review; v0.5.5 hybrid dashboard is merged. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.5.5 draft)
+## What works today (v0.5.6 development branch)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -44,7 +44,7 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
-## FRIDAY desktop interface (v0.5.5 draft)
+## FRIDAY desktop interface (v0.5.6 development branch)
 
 The optional PySide6 shell provides click-to-talk, an animated voice orb, plain-text
 transcripts, an upcoming-reminders list and app-owned **Confirm / Cancel** controls.
@@ -66,7 +66,47 @@ wait for **Ready** before the next turn. Reminder drafts are on by default and w
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
 
-### Hybrid desktop shell (v0.5.5 Slices 1–3; Windows Slice 3 acceptance pending)
+### Focus Voice Mode (v0.5.6; Windows acceptance reported, release promotion pending)
+
+Opening the app shows the **Voice page** in a minimal near-black focus view:
+an enlarged locally painted amber orbital visualization, current state,
+a single recent subtitle and the **original click-to-talk microphone**.
+The main sidebar/top status bar, transcript and daily tool cards are hidden
+until requested. This is a focus view **inside the normal app window**, not
+a transparent desktop overlay or exact movie hologram.
+
+The small controls remain available: **Connect/Disconnect**, **Panels** and
+**Dashboard**. Open Panels → Academic, Reminders, Calendar or Transcript;
+return with **Back to orb**. The Transcript panel also gives access to the
+original reminder-drafting and web-search options before connection. An
+app-owned reminder proposal keeps its real Confirm/Cancel buttons visible
+on the orb view, never approves itself and cannot silently save changes.
+
+A successful, allowlisted read-only `get_academic_calendar` or
+`get_reminders` tool result can reveal the corresponding context panel.
+The application also recognizes a *small exact set* of display-only spoken
+commands such as "show my calendar", "show my reminders", "show
+Brightspace" and "back to orb". These only change presentation; they do
+not execute new model tools or fetch anything. Ordinary conversation
+collapses the panel again. If the speech recognizer mishears a request,
+the visible Panels menu is the reliable fallback.
+
+Academic shows up to five existing local calendar entries and preserves
+source-labeled versus explicit due semantics. Reminders use a bounded
+read-only SQLite preview; Calendar displays the actual worker/sync status,
+**not a Google event list**. All source text and subtitles render as plain
+text. No new network access, persistent conversation memory, automatic
+microphone activation, implicit Google publishing, or additional API cost
+is introduced by panel navigation.
+
+The user-reported Windows acceptance, exact preserved source revisions,
+regression gates and safe rollback steps are recorded in
+[the accepted Focus baseline](docs/ACCEPTED_FOCUS_BASELINE.md). PR #9 is
+merged into `main`; PR #10 now targets `main` and remains under release
+review. The earlier intermittent Gemini turn stall is not conclusively
+root-caused.
+
+### Hybrid desktop shell (v0.5.5 Slices 1–3; Windows visual acceptance reported)
 
 FRIDAY now has a six-page PySide6 Widgets shell: **Home**, **Voice**,
 **Academic**, **Reminders**, **Calendar** and **Settings**. Navigation does not

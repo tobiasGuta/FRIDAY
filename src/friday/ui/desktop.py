@@ -59,6 +59,7 @@ from friday.ui.brightspace_worker import AcademicSyncThread
 from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.ui.desktop_theme import STYLE
+from friday.ui.focus_context import focus_ui_target
 from friday.voice_reminders import VoiceReminderApproval
 
 
@@ -122,10 +123,12 @@ class VoiceOrb(QWidget):
     def __init__(
         self, parent: QWidget | None = None, *, diameter: int = 184,
         cinematic: bool = False,
+        hologram: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setFixedSize(diameter, diameter)
         self._cinematic = cinematic
+        self._hologram = hologram
         self._phase = 0.0
         self._state = "Disconnected"
         self._timer = QTimer(self)
@@ -151,6 +154,10 @@ class VoiceOrb(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.scale(self.width() / 184, self.height() / 184)
+        if self._hologram:
+            self._paint_hologram(painter)
+            painter.end()
+            return
         colors = {
             "Listening": QColor("#54DFC4"),
             "Responding": QColor("#A18BFF"),
@@ -194,6 +201,73 @@ class VoiceOrb(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(center, 47, 47)
         painter.end()
+
+    def _paint_hologram(self, painter: QPainter) -> None:
+        """Vector-only amber sci-fi visual; not a measured audio waveform."""
+        state_colors = {
+            "Ready": QColor("#F5A843"),
+            "Listening": QColor("#FFD06B"),
+            "Responding": QColor("#FFBB58"),
+            "Connecting": QColor("#C68A52"),
+        }
+        color = state_colors.get(self._state, QColor("#7A6042"))
+        center = QPointF(92, 92)
+        active = self._state in self.ACTIVE_STATES
+        rotation = math.degrees(self._phase) * 0.65 if active else 0.0
+        painter.setPen(Qt.PenStyle.NoPen)
+        for radius, alpha in ((85, 15), (74, 25), (61, 32)):
+            glow = QColor(color)
+            glow.setAlpha(alpha)
+            painter.setBrush(glow)
+            painter.drawEllipse(center, radius, radius)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Fine concentric rings and partial orbits create the hologram-like
+        # feeling without GPU shaders, video files or extra dependencies.
+        for radius, opacity, width in (
+            (82, 85, 0.55), (75, 125, 0.8), (66, 155, 0.65),
+            (56, 180, 1.0), (40, 180, 0.75),
+        ):
+            ring = QColor(color)
+            ring.setAlpha(opacity)
+            painter.setPen(QPen(ring, width))
+            painter.drawEllipse(center, radius, radius)
+        painter.setPen(QPen(color.lighter(120), 1.3))
+        painter.drawArc(
+            QRectF(14, 14, 156, 156),
+            int((rotation + 15) * 16), 92 * 16,
+        )
+        painter.drawArc(
+            QRectF(27, 27, 130, 130),
+            int((210 - rotation * 0.8) * 16), 105 * 16,
+        )
+        painter.drawArc(
+            QRectF(38, 38, 108, 108),
+            int((rotation + 135) * 16), 140 * 16,
+        )
+        # Discrete radial circuit ticks, driven by session state rather than
+        # the microphone or model output. Timer pauses when the orb is hidden.
+        for index in range(64):
+            theta = math.radians(index * (360 / 64) + rotation)
+            outer = 83 if index % 4 == 0 else 79
+            inner = outer - (7 if index % 4 == 0 else 3)
+            stroke = QColor(color)
+            stroke.setAlpha(165 if index % 4 == 0 else 68)
+            painter.setPen(QPen(stroke, 1.1 if index % 4 == 0 else 0.6))
+            painter.drawLine(
+                QPointF(92 + math.cos(theta) * inner, 92 + math.sin(theta) * inner),
+                QPointF(92 + math.cos(theta) * outer, 92 + math.sin(theta) * outer),
+            )
+        painter.setPen(Qt.PenStyle.NoPen)
+        gradient = QRadialGradient(center, 38)
+        gradient.setColorAt(0, QColor("#FFF3CA"))
+        gradient.setColorAt(0.2, color.lighter(155))
+        gradient.setColorAt(0.62, color)
+        gradient.setColorAt(1, QColor("#583014"))
+        painter.setBrush(gradient)
+        painter.drawEllipse(center, 33, 33)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(color.lighter(145), 1))
+        painter.drawEllipse(center, 33, 33)
 
 
 class DesktopThread(QThread):
@@ -331,6 +405,8 @@ class DesktopWindow(QMainWindow):
         self._state = "Disconnected"
         self._last_recovery: str | None = None
         self._draft: dict[str, str] | None = None
+        self._voice_panel: str | None = None
+        self._focus_subtitle_speaker: str | None = None
         self.setWindowTitle(f"FRIDAY · v{__version__}")
         self.resize(1270, 830)
         self.setMinimumSize(900, 650)
@@ -408,6 +484,7 @@ class DesktopWindow(QMainWindow):
         sidebar_note.setObjectName("subheading")
         sidebar_note.setWordWrap(True)
         nav.addWidget(sidebar_note)
+        self.sidebar = sidebar
         shell.addWidget(sidebar)
 
         main = QWidget()
@@ -438,6 +515,7 @@ class DesktopWindow(QMainWindow):
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self._connect_or_disconnect)
         bar.addWidget(self.connect_button)
+        self.top_bar = top
         content.addWidget(top)
         self.page_subtitle = QLabel(self._page_subtitles["Home"])
         self.page_subtitle.setObjectName("subheading")
@@ -453,7 +531,7 @@ class DesktopWindow(QMainWindow):
         self._build_reminders_page()
         self._build_calendar_page()
         self._build_settings_page()
-        self._navigate("Home")
+        self._navigate("Voice")
         self._update_local_clock()
 
     def _new_page(self) -> QVBoxLayout:
@@ -718,22 +796,53 @@ class DesktopWindow(QMainWindow):
         self.voice_state_badge.setObjectName("voiceStateBadge")
         self.voice_state_badge.setTextFormat(Qt.TextFormat.PlainText)
         ribbon_layout.addWidget(self.voice_state_badge)
+        self.voice_ribbon = ribbon
         page.addWidget(ribbon)
 
         self.voice_columns = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         self.voice_columns.setSpacing(14)
         stage = self._panel()
-        stage.setObjectName("voiceStage")
+        stage.setObjectName("focusVoiceStage")
+        self.voice_stage = stage
         stage.setMinimumWidth(290)
         voice = QVBoxLayout(stage)
         voice.setContentsMargins(22, 21, 22, 19)
         voice.setSpacing(12)
-        eyebrow = QLabel("FRIDAY · VOICE")
+        focus_toolbar = QHBoxLayout()
+        focus_toolbar.setSpacing(8)
+        eyebrow = QLabel("◉  FRIDAY")
         eyebrow.setObjectName("eyebrow")
-        voice.addWidget(eyebrow, alignment=Qt.AlignmentFlag.AlignHCenter)
+        focus_toolbar.addWidget(eyebrow, 1)
+        self.focus_panels_button = QPushButton("Panels")
+        self.focus_panels_button.setObjectName("focusControl")
+        self.focus_panels_button.setAccessibleName("Show FRIDAY information panel")
+        menu = QMenu(self.focus_panels_button)
+        for name, kind in (
+            ("Academic", "academic"), ("Reminders", "reminders"),
+            ("Calendar", "calendar"), ("Transcript", "transcript"),
+        ):
+            action = menu.addAction(name)
+            action.triggered.connect(
+                lambda _checked=False, target=kind: self._show_voice_context(target)
+            )
+        self.focus_panels_button.setMenu(menu)
+        focus_toolbar.addWidget(self.focus_panels_button)
+        self.focus_dashboard_button = self._open_page_button("Dashboard", "Home")
+        self.focus_dashboard_button.setObjectName("focusControl")
+        focus_toolbar.addWidget(self.focus_dashboard_button)
+        self.focus_connect_button = QPushButton("Connect")
+        self.focus_connect_button.setObjectName("focusControl")
+        self.focus_connect_button.clicked.connect(self._connect_or_disconnect)
+        focus_toolbar.addWidget(self.focus_connect_button)
+        voice.addLayout(focus_toolbar)
         voice.addStretch(1)
-        self.orb = VoiceOrb(diameter=260, cinematic=True)
+        self.orb = VoiceOrb(diameter=338, cinematic=True, hologram=True)
         voice.addWidget(self.orb, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.focus_subtitle = self._plain_label("Your conversation appears here.")
+        self.focus_subtitle.setObjectName("focusSubtitle")
+        self.focus_subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.focus_subtitle.setMinimumHeight(38)
+        voice.addWidget(self.focus_subtitle)
         self.voice_title = QLabel("FRIDAY is offline")
         self.voice_title.setObjectName("voiceHeadline")
         self.voice_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -756,7 +865,7 @@ class DesktopWindow(QMainWindow):
         self.mic_button.clicked.connect(self._toggle_microphone)
         voice.addWidget(self.mic_button)
         voice.addWidget(self._plain_label(
-            "Connect or disconnect from the top bar. Recording only starts when you click."
+            "Connection and recording remain manual; no wake word or auto-reconnect."
         ))
         voice.addStretch(1)
 
@@ -780,17 +889,24 @@ class DesktopWindow(QMainWindow):
         approval_layout.addLayout(choice)
         voice.addWidget(self.approval_panel)
         self.approval_panel.hide()
+        self.voice_options_box = QWidget()
+        voice_options = QVBoxLayout(self.voice_options_box)
+        voice_options.setContentsMargins(0, 0, 0, 0)
         self.reminder_option = QCheckBox("Enable reminder drafts and approval")
         self.reminder_option.setChecked(reminders)
         self.web_option = QCheckBox("Enable web search (uses API credits)")
         self.web_option.setChecked(web)
-        voice.addWidget(self.reminder_option)
-        voice.addWidget(self.web_option)
+        voice_options.addWidget(self.reminder_option)
+        voice_options.addWidget(self.web_option)
+        voice.addWidget(self.voice_options_box)
         self.voice_columns.addWidget(stage, 5)
 
-        right = QVBoxLayout()
+        self.voice_right_host = QWidget()
+        right = QVBoxLayout(self.voice_right_host)
+        right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(13)
         transcript_panel = self._panel()
+        self.voice_transcript_panel = transcript_panel
         transcript_layout = QVBoxLayout(transcript_panel)
         transcript_layout.setContentsMargins(15, 16, 15, 15)
         transcript_layout.setSpacing(9)
@@ -826,8 +942,35 @@ class DesktopWindow(QMainWindow):
         self.transcript.setMinimumHeight(130)
         self.transcript.hide()
         transcript_layout.addWidget(self.transcript)
-        self.voice_columns.addLayout(right, 6)
+        self.voice_columns.addWidget(self.voice_right_host, 6)
         right.addWidget(transcript_panel, 3)
+
+        self.voice_context_panel = self._panel()
+        context_layout = QVBoxLayout(self.voice_context_panel)
+        context_layout.setContentsMargins(18, 16, 18, 16)
+        context_layout.setSpacing(10)
+        self.voice_context_title = QLabel("Context")
+        self.voice_context_title.setObjectName("section")
+        context_layout.addWidget(self.voice_context_title)
+        self.voice_context_notice = self._plain_label(
+            "Only already-authorized, locally available information is displayed."
+        )
+        context_layout.addWidget(self.voice_context_notice)
+        self.voice_context_items = QListWidget()
+        self.voice_context_items.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.voice_context_items.setMinimumHeight(200)
+        context_layout.addWidget(self.voice_context_items, 1)
+        context_actions = QHBoxLayout()
+        self.voice_context_page_button = QPushButton("Open full page")
+        self.voice_context_page_button.clicked.connect(self._open_context_page)
+        context_actions.addWidget(self.voice_context_page_button)
+        self.voice_context_close_button = QPushButton("Back to orb")
+        self.voice_context_close_button.clicked.connect(
+            lambda: self._show_voice_context(None)
+        )
+        context_actions.addWidget(self.voice_context_close_button)
+        context_layout.addLayout(context_actions)
+        right.addWidget(self.voice_context_panel, 3)
 
         glance = self._panel()
         glance_layout = QVBoxLayout(glance)
@@ -848,12 +991,96 @@ class DesktopWindow(QMainWindow):
         context_actions.addWidget(self._open_page_button("Reminders", "Reminders"))
         glance_layout.addLayout(context_actions)
         right.addWidget(glance, 1)
+        self.voice_context_glance = glance
         page.addLayout(self.voice_columns, 1)
         page.addWidget(self._plain_label(
             "Try asking: \"What's due today?\" or \"List my reminders.\" "
             "These are examples, not auto-sent commands."
         ))
+        self._show_voice_context(None)
         self._adapt_voice_layout(self.width())
+
+    def _show_voice_context(self, kind: str | None) -> None:
+        """Reveal a local view, never take a device, calendar or provider action."""
+        if kind not in {None, "academic", "reminders", "calendar", "transcript"}:
+            return
+        self._voice_panel = kind
+        self.voice_right_host.setVisible(kind is not None)
+        self.voice_transcript_panel.setVisible(kind == "transcript")
+        self.voice_context_panel.setVisible(kind in {"academic", "reminders", "calendar"})
+        # Even transcript mode stays focused: other dashboards only show on request.
+        self.voice_context_glance.setVisible(False)
+        self.voice_options_box.setVisible(kind == "transcript")
+        self.voice_ribbon.setVisible(kind == "transcript")
+        self.voice_stage.setObjectName(
+            "focusVoiceStage" if kind is None else "voiceStage"
+        )
+        self.voice_stage.style().unpolish(self.voice_stage)
+        self.voice_stage.style().polish(self.voice_stage)
+        if kind in {"academic", "reminders", "calendar"}:
+            self._populate_voice_context(kind)
+        self._adapt_voice_layout(self.width())
+
+    def _populate_voice_context(self, kind: str) -> None:
+        """Display bounded existing local records, not new or guessed events."""
+        self.voice_context_items.clear()
+        targets = {
+            "academic": ("Brightspace · upcoming", "Academic"),
+            "reminders": ("Upcoming reminders", "Reminders"),
+            "calendar": ("Calendar / scheduler", "Calendar"),
+        }
+        if kind not in targets:
+            return
+        label, destination = targets[kind]
+        self.voice_context_title.setText(label)
+        self.voice_context_page_button.setText(f"Open {destination}")
+        self.voice_context_notice.setText({
+            "academic": self.academic_status.text(),
+            "reminders": "Future pending reminders from local storage.",
+            "calendar": "Worker and optional Google sync status only; "
+                        "FRIDAY does not fetch Google event lists.",
+        }[kind])
+        if kind == "academic":
+            items = [
+                self.academic_list.item(i).text()
+                for i in range(min(5, self.academic_list.count()))
+            ]
+            if not items:
+                items = ["No upcoming published calendar items in the local snapshot."]
+        elif kind == "reminders":
+            try:
+                count, preview = read_pending_reminder_preview(limit=5)
+                items = [
+                    text + "\n" + datetime.fromtimestamp(due_at).astimezone().strftime(
+                        "%a, %b %d · %I:%M %p"
+                    )
+                    for text, due_at in preview
+                ]
+                self.voice_context_notice.setText(
+                    f"{count} future pending reminder(s) in local storage."
+                )
+            except (OSError, sqlite3.Error, ValueError):
+                items = ["Local reminders unavailable."]
+            if not items:
+                items = ["No future pending local reminders."]
+        else:
+            items = [
+                self.calendar_status.text(),
+                self.scheduler_notice.text(),
+                "Google Calendar publishing is separately opt-in. "
+                "No Google event list is available in this view.",
+            ]
+        for item in items:
+            self.voice_context_items.addItem(item)
+
+    def _open_context_page(self) -> None:
+        destination = {
+            "academic": "Academic",
+            "reminders": "Reminders",
+            "calendar": "Calendar",
+        }.get(self._voice_panel)
+        if destination:
+            self._navigate(destination)
 
     def _toggle_full_transcript(self, checked: bool) -> None:
         self.transcript.setVisible(checked)
@@ -1067,6 +1294,13 @@ class DesktopWindow(QMainWindow):
         self.page_subtitle.setText(self._page_subtitles[destination])
         for name, button in self.nav_buttons.items():
             button.setChecked(name == destination)
+        in_voice = destination == "Voice"
+        self.sidebar.setVisible(not in_voice)
+        self.top_bar.setVisible(not in_voice)
+        self.page_subtitle.setVisible(not in_voice)
+        if in_voice:
+            # Every entry starts uncluttered; no provider session is started.
+            self._show_voice_context(None)
 
     def _update_local_clock(self) -> None:
         local = datetime.now().astimezone()
@@ -1258,6 +1492,8 @@ class DesktopWindow(QMainWindow):
         self.top_academic_status.setText(label)
         self._refresh_home_academic()
         self._refresh_voice_context()
+        if self._voice_panel == "academic":
+            self._populate_voice_context("academic")
 
     def _save_academic_feed(self) -> None:
         if self._academic_sync is not None or self._quitting or self._closing:
@@ -1469,6 +1705,14 @@ class DesktopWindow(QMainWindow):
         if text:
             self.transcript.appendPlainText(f"{label}: {text}")
             self._append_voice_bubble(label, text)
+            if label in {"You", "FRIDAY"}:
+                if self._focus_subtitle_speaker == label and label == "FRIDAY":
+                    updated = (self.focus_subtitle.text() + " " + text).strip()
+                else:
+                    updated = text.strip()
+                self._focus_subtitle_speaker = label
+                # No HTML interpretation, recording, or persisted history.
+                self.focus_subtitle.setText(updated[-250:])
 
     def _set_state(self, state: str) -> None:
         self._state = state
@@ -1533,6 +1777,8 @@ class DesktopWindow(QMainWindow):
             )
         )
         self.connect_button.setEnabled(state not in {"Disconnecting"})
+        self.focus_connect_button.setText(self.connect_button.text())
+        self.focus_connect_button.setEnabled(self.connect_button.isEnabled())
         self.reminder_option.setEnabled(
             state in {"Disconnected", "Connection failed"} or state in recoverable
         )
@@ -1625,6 +1871,22 @@ class DesktopWindow(QMainWindow):
             if isinstance(text, str) and text.strip():
                 prefix = "You" if speaker == "user" else "FRIDAY"
                 self.home_recent.setText(f"{prefix}: {text.strip()[:240]}")
+                if speaker == "user":
+                    target = focus_ui_target(text)
+                    if target is not None and self.page_title.text() in {"Home", "Voice"}:
+                        if self.page_title.text() == "Home":
+                            self._navigate("Voice")
+                        self._show_voice_context(None if target == "focus" else target)
+                    elif self._voice_panel is not None and self.page_title.text() == "Voice":
+                        # Ordinary conversation returns to the uncluttered orb.
+                        self._show_voice_context(None)
+        elif kind == "context":
+            # Only named read-only tool outcomes can auto-reveal local data.
+            if value in {"academic", "reminders"}:
+                if self.page_title.text() == "Home":
+                    self._navigate("Voice")
+                if self.page_title.text() == "Voice":
+                    self._show_voice_context(value)
         elif kind == "notice":
             self._append("System", str(value))
         elif kind == "error":
@@ -1644,6 +1906,8 @@ class DesktopWindow(QMainWindow):
                 f"{len(value)} pending reminder(s) reported by the current voice session."
             )
             self._refresh_voice_context()
+            if self._voice_panel == "reminders":
+                self._populate_voice_context("reminders")
         elif kind == "sources":
             for item in value:
                 self._append("Source", f"{item['title']} — {item['url']}")

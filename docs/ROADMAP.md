@@ -139,18 +139,39 @@
 - **Slice 2, implemented on draft branch:** responsive Home voice hero and
   source-backed academic/reminder cards; read-only SQLite preview (no new
   database or startup network), live scheduler summaries and canonical manual
-  sync navigation. Windows visual acceptance pending.
+  sync navigation. Windows visual acceptance reported.
 - **Slice 3, implemented on draft branch:** larger actual-state cinematic orb,
   responsive voice stage, bounded window-only plain-text conversation bubbles,
   collapsible original transcript and local status context. No live audio
   amplitude claims, auto-listening, auto-reconnect, or new model tools. Windows
-  visual/headset acceptance pending.
+  visual/headset acceptance reported.
 - **Slice 4:** Academic cards and course filters only when actual feed data
   supports reliable course association; preserve source-labeled versus
   explicit due semantics.
 - **Slice 5:** screen-size, keyboard, accessibility, DPI and theme polish.
 - Offline CI, then Windows layout/headset/tray/credential acceptance are
   required before merging this UI milestone.
+
+## v0.5.6 — Focus Voice Mode (Windows acceptance reported)
+
+- An orb-first Voice page with normal-window near-black canvas, amber
+  state-driven Qt rendering, optional concise subtitles and canonical mic and
+  approval controls. Sidebar, full transcript and dashboard cards stay hidden
+  until the user requests them.
+- Allowlisted successful read-only academic/reminder tool events produce typed
+  UI presentation hints; exact local show/hide phrases and visible panel menu
+  also work. No transcript keyword scanning for permission changes.
+- Academic/reminder drawer uses bounded local data. Calendar drawer shows
+  worker and optional Google sync status only, not unrelated event lists.
+- Preserve manual Connect/Stop, explicit reconnect, no persistent chat memory,
+  no extra Gemini sessions for UI changes, read-only Brightspace and original
+  scheduler/tray ownership. No transparent overlay or QML rewrite in scope.
+- Offline Windows/Ubuntu CI passed at the accepted v0.5.6 head. User reported
+  working Windows focus view, Brightspace drawer and multi-turn conversation.
+  Additional long-run stability and individual reminder/scheduler checks remain
+  separate regression gates. The exact source and rollback are recorded in
+  `docs/ACCEPTED_FOCUS_BASELINE.md`. PR #9 was merged into `main`;
+  PR #10 now targets `main` and awaits release authorization.
 
 ## Later
 

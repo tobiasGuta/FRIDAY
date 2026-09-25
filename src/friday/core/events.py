@@ -13,6 +13,7 @@ class EventKind(StrEnum):
     INTERRUPTED = "interrupted"
     NOTICE = "notice"
     GROUNDING = "grounding"
+    CONTEXT = "context"
     ERROR = "error"
 
 
@@ -40,6 +41,7 @@ class VoiceEvent:
     state: SessionState | None = None
     sources: tuple[SearchSource, ...] = ()
     search_suggestions_html: str | None = None
+    context_kind: str | None = None
 
     def __repr__(self) -> str:
         # Audio contents are deliberately not included in event repr/logs.
@@ -48,6 +50,6 @@ class VoiceEvent:
             f"VoiceEvent(kind={self.kind!r}, text={self.text!r}, "
             f"speaker={self.speaker!r}, audio={audio_info}, "
             f"sample_rate={self.sample_rate!r}, state={self.state!r}, "
-            f"source_count={len(self.sources)}, "
+            f"source_count={len(self.sources)}, context_kind={self.context_kind!r}, "
             f"has_search_suggestions={self.search_suggestions_html is not None})"
         )

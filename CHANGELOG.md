@@ -1,6 +1,31 @@
 # Changelog
 
-## 0.5.5 — Hybrid desktop shell (Slices 1–3; Windows Slice 3 acceptance pending)
+## 0.5.6 — Voice Focus Mode (Windows user acceptance reported; release pending)
+
+- Make the Voice page the opening view while keeping the actual Gemini/microphone
+  session disconnected until explicitly connected. Hide dashboard sidebar, top
+  bar, conversation list and other tool cards by default.
+- Render a larger amber orbital hologram using local Qt painting. The motion
+  indicates actual session states only; it is not an acoustic audio meter, a
+  movie asset or a transparent desktop overlay.
+- Keep the original manual Start talking / Stop recording, explicit
+  Connect / Disconnect, bounded full transcript and host-owned reminder draft
+  confirmation controls. A small Panels menu and Dashboard button provide
+  deterministic escape routes; no second approval implementation.
+- Reveal Academic/Reminders only after their allowlisted read-only provider
+  tools actually execute or the user gives a narrowly recognized local UI
+  display command. Calendar shows only actual scheduler/Google sync status, not
+  an invented Google event feed. A later ordinary spoken turn collapses panels.
+- Reuse existing in-memory Brightspace records and a bounded read-only reminder
+  preview; panel changes do not start a model session, microphone, scheduler or
+  network request. Hide unrelated daily cards even while viewing transcript.
+- Add offline tests for exact UI-only commands, trusted provider hints, no
+  unexpected permissions, focus layout, plaintext subtitles and approval.
+- Record exact accepted source SHAs, matching CI and recovery procedure in
+  `docs/ACCEPTED_FOCUS_BASELINE.md`. Earlier intermittent Live turn stalls
+  remain observable through privacy-safe diagnostics; no permanent cure claimed.
+
+## 0.5.5 — Hybrid desktop shell (Slices 1–3; Windows UI acceptance reported)
 
 - Introduce six navigable PySide6 Widgets pages: Home, Voice, Academic,
   Reminders, Calendar, Settings, with a new dark dashboard style and live

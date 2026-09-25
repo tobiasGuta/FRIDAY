@@ -431,3 +431,39 @@ def test_real_turn_complete_releases_microphone_after_generation_marker():
         await asyncio.wait_for(runner, 2)
 
     asyncio.run(scenario())
+
+
+def test_tool_context_is_a_fixed_ui_hint_not_a_new_permission():
+    async def scenario():
+        provider = FakeAudioProvider()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), FakeMicrophone(), FakeSpeaker(),
+            approval=None, emit=lambda kind, value: events.append((kind, value)),
+            max_seconds=30,
+        )
+        runner = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        await provider.events_queue.put(
+            VoiceEvent(EventKind.CONTEXT, context_kind="academic")
+        )
+        await provider.events_queue.put(
+            VoiceEvent(EventKind.CONTEXT, context_kind="reminders")
+        )
+        await provider.events_queue.put(
+            VoiceEvent(EventKind.CONTEXT, context_kind="dangerous_unknown_action")
+        )
+        async with asyncio.timeout(2):
+            while len([event for event in events if event[0] == "context"]) < 2:
+                await asyncio.sleep(0.005)
+        assert [value for kind, value in events if kind == "context"] == [
+            "academic", "reminders"
+        ]
+        assert not any(kind == "context" and value == "dangerous_unknown_action"
+                       for kind, value in events)
+        assert not any(kind == "status" and value == "Listening" for kind, value in events)
+        controller.request("quit")
+        await asyncio.wait_for(runner, 2)
+        assert provider.closed
+
+    asyncio.run(scenario())

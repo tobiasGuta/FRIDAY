@@ -489,8 +489,8 @@ def test_hybrid_shell_navigation_exposes_six_real_pages_without_starting_workers
         assert tuple(window.nav_buttons) == (
             "Home", "Voice", "Academic", "Reminders", "Calendar", "Settings"
         )
-        assert window.page_title.text() == "Home"
-        assert window.nav_buttons["Home"].isChecked()
+        assert window.page_title.text() == "Voice"
+        assert window.nav_buttons["Voice"].isChecked()
         for index, page in enumerate(window.nav_buttons):
             window._navigate(page)
             assert window.pages.currentIndex() == index
@@ -684,7 +684,8 @@ def test_cinematic_voice_page_uses_actual_session_states_without_audio():
         assert app is not None
         window._navigate("Voice")
         assert window.orb._cinematic
-        assert window.orb.width() == 260
+        assert window.orb.width() == 338
+        assert window.orb._hologram
         assert window._worker is None
         assert window._state == "Disconnected"
         assert not window.mic_button.isEnabled()
@@ -759,7 +760,10 @@ def test_cinematic_bubbles_are_plaintext_bounded_and_raw_transcript_retained():
         assert len(window._voice_bubble_entries) == 2
         assert window._voice_bubble_entries[-1][1].text() == "First chunk"
 
+        # The transcript is now an explicit panel rather than persistent clutter.
+        window._show_voice_context("transcript")
         window.full_transcript_button.setChecked(True)
+        app.processEvents()
         assert window.transcript.isVisibleTo(window)
         assert window.full_transcript_button.text() == "Hide full text transcript"
         window.full_transcript_button.setChecked(False)
@@ -799,5 +803,137 @@ def test_cinematic_context_is_local_and_stacks_when_narrow():
         assert window._worker is None
         assert window._scheduler is None
         assert window._academic_sync is None
+    finally:
+        window.close()
+
+
+def test_focus_voice_starts_borderless_without_background_tool_panels():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        window.show()
+        app.processEvents()
+        assert window.page_title.text() == "Voice"
+        assert window.orb._hologram
+        assert window.orb.width() == 338
+        assert window.sidebar.isHidden()
+        assert window.top_bar.isHidden()
+        assert window.page_subtitle.isHidden()
+        assert window.voice_right_host.isHidden()
+        assert window.voice_stage.objectName() == "focusVoiceStage"
+        assert window._voice_panel is None
+        assert not window.mic_button.isEnabled()
+        assert window.focus_connect_button.text() == "Connect"
+        assert window._worker is None
+        assert window._scheduler is None
+        assert window._academic_sync is None
+        window._navigate("Home")
+        app.processEvents()
+        assert window.sidebar.isVisibleTo(window)
+        assert window.top_bar.isVisibleTo(window)
+        assert window.page_title.text() == "Home"
+        window._navigate("Voice")
+        assert window._voice_panel is None
+        assert window.voice_right_host.isHidden()
+    finally:
+        window.close()
+
+
+def test_focus_context_reveals_real_local_items_and_returns_to_orb(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        window.show()
+        window.academic_list.clear()  # Replace the offline placeholder in this fixture.
+        window.academic_list.addItem(
+            "Brightspace-labeled due (event): Worksheet I - Due\\nSep 25 · 11:59 PM"
+        )
+        window.academic_status.setText("Brightspace: cached · local snapshot")
+        window._on_event("context", "academic")
+        app.processEvents()
+        assert window._voice_panel == "academic"
+        assert window.voice_right_host.isVisibleTo(window)
+        assert window.voice_context_panel.isVisibleTo(window)
+        assert window.voice_transcript_panel.isHidden()
+        assert "Worksheet I" in window.voice_context_items.item(0).text()
+        assert window.voice_context_items.count() == 1
+        assert window._worker is None  # A panel never opens a Gemini session.
+        window._on_event("transcript", {"speaker": "user", "text": "I'm just chilling"})
+        assert window._voice_panel is None
+        assert window.voice_right_host.isHidden()
+
+        # A tool result from the real read-only allowlist can reveal a panel
+        # even if FRIDAY was being used from Home, but unknown names cannot.
+        window._navigate("Home")
+        window._on_event("context", "unknown")
+        assert window.page_title.text() == "Home"
+        window._on_event("context", "academic")
+        assert window.page_title.text() == "Voice"
+        assert window._voice_panel == "academic"
+        window.voice_context_close_button.click()
+        assert window._voice_panel is None
+        window._show_voice_context("calendar")
+        assert window.voice_context_items.count() == 3
+        assert "worker" in window.voice_context_items.item(0).text().lower()
+        assert "No Google event list" in window.voice_context_items.item(2).text()
+        window.voice_context_page_button.click()
+        assert window.page_title.text() == "Calendar"
+        assert window.sidebar.isVisibleTo(window)
+    finally:
+        window.close()
+
+
+def test_focus_voice_transcript_remains_plain_and_user_controls_are_real():
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window.show()
+        window._on_event("status", "Ready")
+        assert window.focus_connect_button.text() == window.connect_button.text()
+        assert window.orb._state == "Ready"
+        sample = '<img src="file:///private/path">'
+        window._on_event("transcript", {"speaker": "assistant", "text": sample})
+        assert window.focus_subtitle.text() == sample
+        assert window.focus_subtitle.textFormat() == desktop.Qt.TextFormat.PlainText
+        assert sample in window.transcript.toPlainText()
+        assert window.voice_right_host.isHidden()
+
+        window._on_event("transcript", {"speaker": "user", "text": "Show transcript"})
+        assert window._voice_panel == "transcript"
+        assert window.voice_transcript_panel.isVisibleTo(window)
+        assert window.voice_options_box.isVisibleTo(window)
+        window.full_transcript_button.setChecked(True)
+        assert window.transcript.isVisibleTo(window)
+        window._on_event("transcript", {"speaker": "user", "text": "Back to orb"})
+        assert window._voice_panel is None
+        assert window.voice_right_host.isHidden()
+
+        draft = {"action": "create", "text": "Study", "at": "2026-10-01T15:00:00-04:00"}
+        window._on_event("draft", draft)
+        assert window.approval_panel.isVisibleTo(window)
+        assert window.approve_button.isEnabled()
+        assert window.reject_button.isEnabled()
+        assert window.voice_right_host.isHidden()
+        assert window._worker is None
+    finally:
+        window.close()
+
+
+def test_focus_local_reminder_panel_does_not_run_worker(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        monkeypatch.setattr(
+            desktop, "read_pending_reminder_preview",
+            lambda *, limit: (1, (("Study chapter", 1800000000.0),)),
+        )
+        window._show_voice_context("reminders")
+        assert window.voice_context_items.count() == 1
+        assert "Study chapter" in window.voice_context_items.item(0).text()
+        assert "1 future pending" in window.voice_context_notice.text()
+        assert window._worker is None
+        assert window._scheduler is None
     finally:
         window.close()
