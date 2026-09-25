@@ -1362,8 +1362,10 @@ class DesktopWindow(QMainWindow):
         layout.setContentsMargins(18, 17, 18, 17)
         layout.addLayout(self._heading(
             "YOUR PROJECTS",
-            subtitle="Add any folder manually or authorize a parent folder for one-level discovery. "
-                     "Nothing scans your drive by default. No Gemini connection required.",
+            subtitle=(
+                "Add any folder manually or authorize a parent folder for one-level discovery. "
+                "Nothing scans your drive by default. No Gemini connection required."
+            ),
         ))
         self.projects_notice = self._plain_label("No discovery folders authorized yet.")
         layout.addWidget(self.projects_notice)
