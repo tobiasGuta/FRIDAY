@@ -1000,6 +1000,87 @@ class DesktopWindow(QMainWindow):
         self._show_voice_context(None)
         self._adapt_voice_layout(self.width())
 
+    def _show_voice_context(self, kind: str | None) -> None:
+        """Reveal a local view, never take a device, calendar or provider action."""
+        if kind not in {None, "academic", "reminders", "calendar", "transcript"}:
+            return
+        self._voice_panel = kind
+        self.voice_right_host.setVisible(kind is not None)
+        self.voice_transcript_panel.setVisible(kind == "transcript")
+        self.voice_context_panel.setVisible(kind in {"academic", "reminders", "calendar"})
+        self.voice_context_glance.setVisible(kind == "transcript")
+        self.voice_options_box.setVisible(kind == "transcript")
+        self.voice_ribbon.setVisible(kind == "transcript")
+        self.voice_stage.setObjectName(
+            "focusVoiceStage" if kind is None else "voiceStage"
+        )
+        self.voice_stage.style().unpolish(self.voice_stage)
+        self.voice_stage.style().polish(self.voice_stage)
+        if kind in {"academic", "reminders", "calendar"}:
+            self._populate_voice_context(kind)
+        self._adapt_voice_layout(self.width())
+
+    def _populate_voice_context(self, kind: str) -> None:
+        """Display bounded existing local records, not new or guessed events."""
+        self.voice_context_items.clear()
+        targets = {
+            "academic": ("Brightspace · upcoming", "Academic"),
+            "reminders": ("Upcoming reminders", "Reminders"),
+            "calendar": ("Calendar / scheduler", "Calendar"),
+        }
+        if kind not in targets:
+            return
+        label, destination = targets[kind]
+        self.voice_context_title.setText(label)
+        self.voice_context_page_button.setText(f"Open {destination}")
+        self.voice_context_notice.setText({
+            "academic": self.academic_status.text(),
+            "reminders": "Future pending reminders from local storage.",
+            "calendar": "Worker and optional Google sync status only; "
+                        "FRIDAY does not fetch Google event lists.",
+        }[kind])
+        if kind == "academic":
+            items = [
+                self.academic_list.item(i).text()
+                for i in range(min(5, self.academic_list.count()))
+            ]
+            if not items:
+                items = ["No upcoming published calendar items in the local snapshot."]
+        elif kind == "reminders":
+            try:
+                count, preview = read_pending_reminder_preview(limit=5)
+                items = [
+                    text + "\n" + datetime.fromtimestamp(due_at).astimezone().strftime(
+                        "%a, %b %d · %I:%M %p"
+                    )
+                    for text, due_at in preview
+                ]
+                self.voice_context_notice.setText(
+                    f"{count} future pending reminder(s) in local storage."
+                )
+            except (OSError, sqlite3.Error, ValueError):
+                items = ["Local reminders unavailable."]
+            if not items:
+                items = ["No future pending local reminders."]
+        else:
+            items = [
+                self.calendar_status.text(),
+                self.scheduler_notice.text(),
+                "Google Calendar publishing is separately opt-in. "
+                "No Google event list is available in this view.",
+            ]
+        for item in items:
+            self.voice_context_items.addItem(item)
+
+    def _open_context_page(self) -> None:
+        destination = {
+            "academic": "Academic",
+            "reminders": "Reminders",
+            "calendar": "Calendar",
+        }.get(self._voice_panel)
+        if destination:
+            self._navigate(destination)
+
     def _toggle_full_transcript(self, checked: bool) -> None:
         self.transcript.setVisible(checked)
         self.full_transcript_button.setText(
