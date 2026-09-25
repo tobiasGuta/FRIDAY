@@ -52,7 +52,7 @@ def _directory(path: str | Path) -> Path:
 
 
 def _key(path: Path) -> str:
-    return os.path.normcase(str(path)).casefold()
+    return os.path.normcase(str(path))
 
 
 def _identity(path: Path) -> str:
@@ -189,15 +189,15 @@ class ProjectCatalog:
         self._save(data)
 
     def _discovered_paths(self, data: dict):
-        count = 0
         for raw in data["roots"]:
+            count = 0
             try:
                 root = _directory(raw)
                 with os.scandir(root) as entries:
                     for entry in entries:
                         count += 1
-                        if count > MAX_SCAN_ENTRIES * MAX_ROOTS:
-                            return
+                        if count > MAX_SCAN_ENTRIES:
+                            break
                         if entry.name.startswith(".") or not entry.is_dir(follow_symlinks=False):
                             continue
                         path = _safe_child(Path(entry.path), root)
