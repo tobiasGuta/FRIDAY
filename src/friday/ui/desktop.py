@@ -27,11 +27,10 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QPushButton,
     QScrollArea,
     QStackedWidget,
-    QPushButton,
     QSystemTrayIcon,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -54,6 +53,7 @@ from friday.ui.desktop_scheduler import AlertRequest, SchedulerThread
 from friday.ui.desktop_session import DesktopVoiceSession
 from friday.ui.desktop_theme import STYLE
 from friday.voice_reminders import VoiceReminderApproval
+
 
 def _formatted_at(value: str) -> str:
     try:
