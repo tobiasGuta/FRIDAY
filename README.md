@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.5.4 adds opt-in, read-only CUNY Brightspace calendar intelligence alongside the established desktop scheduler and voice recovery.**
+A harness-first personal AI assistant. **v0.5.5 is a draft hybrid desktop shell: Home, Voice, Academic, Reminders, Calendar and Settings preserve the working v0.5.4 capabilities.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.5.4)
+## What works today (v0.5.5 draft)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -44,7 +44,7 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
-## FRIDAY desktop interface (v0.5.4)
+## FRIDAY desktop interface (v0.5.5 draft)
 
 The optional PySide6 shell provides click-to-talk, an animated voice orb, plain-text
 transcripts, an upcoming-reminders list and app-owned **Confirm / Cancel** controls.
@@ -65,6 +65,37 @@ until you click **Connect**. Use **Start talking**, speak, then **Stop recording
 wait for **Ready** before the next turn. Reminder drafts are on by default and web
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
+
+### Hybrid desktop shell (v0.5.5 Slice 1; Windows visual acceptance pending)
+
+FRIDAY now has a six-page PySide6 Widgets shell: **Home**, **Voice**,
+**Academic**, **Reminders**, **Calendar** and **Settings**. Navigation does not
+start a voice session, a database worker or a network request. The top bar
+mirrors the actual session/scheduler/academic state and computer-local time.
+
+- **Home**: read-only summaries of the current session, locally visible
+  Brightspace items, and the scheduler. The conversation preview is
+  **current-session only** and does not persist a chat history.
+- **Voice**: the existing animated orb, one canonical microphone button,
+  plain-text transcript, reminder draft Confirm/Cancel controls, and existing
+  opt-in reminder/web settings. A new approval draft opens this page so that
+  the real host-owned controls remain accessible.
+- **Academic**: the original protected feed entry, Save, Sync now, Remove,
+  optional 30-minute desktop-scheduler refresh, next-connection read-only
+  voice opt-in, and due-label distinctions.
+- **Reminders**: existing pending-reminder list. Actual approval remains
+  on Voice; the UI does not invent batch-approval or direct schedule actions.
+- **Calendar**: original owned-worker controls and optional Google sync.
+  The new UI does not claim to read unrelated Google calendar events.
+- **Settings**: navigation to the existing functional controls, plus an
+  honest appearance placeholder. No new persistent preferences are written.
+
+The UI redraw is intentionally within the existing Qt Widgets framework;
+no new permission, provider integration, paid session behavior, or credential
+storage mechanism is introduced. Desktop layout, cinematic orb polish and
+course grouping can be expanded in subsequent slices. The mockups include
+illustrative courses/events and controls that must **not** be interpreted as
+implemented data or actions.
 
 ### Brightspace calendar (v0.5.4; live Windows acceptance pending)
 
