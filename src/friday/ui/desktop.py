@@ -19,11 +19,14 @@ from PySide6.QtWidgets import (
     QApplication,
     QBoxLayout,
     QCheckBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -49,6 +52,8 @@ from friday.brightspace_feed import forget_feed, save_feed
 from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
 from friday.providers.gemini_live import GeminiLiveProvider
+from friday.tools.project_launcher import ProjectLauncher
+from friday.tools.projects import ProjectCatalog, ProjectError
 from friday.schedule import (
     ScheduleStore,
     WorkerHealth,
@@ -414,8 +419,11 @@ class DesktopWindow(QMainWindow):
         reminders: bool = True,
         web: bool = False,
         max_seconds: int | None = None,
+        project_catalog: ProjectCatalog | None = None,
     ) -> None:
         super().__init__()
+        self._projects = project_catalog if project_catalog is not None else ProjectCatalog()
+        self._project_launcher = ProjectLauncher(self._projects)
         self._input_device = input_device
         self._output_device = output_device
         self._input_language = input_language
@@ -494,6 +502,7 @@ class DesktopWindow(QMainWindow):
             "Academic": "Read-only Brightspace calendar",
             "Reminders": "Local reminders and approval-controlled actions",
             "Calendar": "Desktop scheduler and optional Google sync",
+            "Projects": "Your approved local development projects",
             "Settings": "Voice permissions, integrations, and appearance",
         }
         for name in self._page_subtitles:
@@ -559,6 +568,7 @@ class DesktopWindow(QMainWindow):
         self._build_academic_page()
         self._build_reminders_page()
         self._build_calendar_page()
+        self._build_projects_page()
         self._build_settings_page()
         self._navigate("Voice")
         self._update_local_clock()
@@ -780,6 +790,7 @@ class DesktopWindow(QMainWindow):
         actions.addWidget(self._open_page_button("Academic", "Academic"))
         actions.addWidget(self._open_page_button("Reminders", "Reminders"))
         actions.addWidget(self._open_page_button("Calendar", "Calendar"))
+        actions.addWidget(self._open_page_button("Projects", "Projects"))
         quick_layout.addLayout(actions)
         page.addWidget(quick)
         page.addStretch(1)
@@ -854,6 +865,9 @@ class DesktopWindow(QMainWindow):
             action.triggered.connect(
                 lambda _checked=False, target=kind: self._show_voice_context(target)
             )
+        menu.addAction("Projects").triggered.connect(
+            lambda: self._navigate("Projects")
+        )
         menu.addSeparator()
         self.experimental_hologram_action = menu.addAction(
             "Experimental orbital hologram · Slice 1"
@@ -1303,6 +1317,174 @@ class DesktopWindow(QMainWindow):
         page.addWidget(panel)
         page.addStretch(1)
 
+    def _build_projects_page(self) -> None:
+        page = self._new_page()
+        panel = self._panel()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(18, 17, 18, 17)
+        layout.addLayout(self._heading(
+            "YOUR PROJECTS",
+            subtitle="Add any folder manually or authorize a parent folder for one-level discovery. "
+                     "Nothing scans your drive by default. No Gemini connection required.",
+        ))
+        self.projects_notice = self._plain_label("No discovery folders authorized yet.")
+        layout.addWidget(self.projects_notice)
+        self.project_list = QListWidget()
+        self.project_list.setMinimumHeight(220)
+        layout.addWidget(self.project_list)
+        buttons = QHBoxLayout()
+        self.project_vscode_button = QPushButton("Open in VS Code")
+        self.project_vscode_button.clicked.connect(
+            lambda: self._launch_selected_project("vscode")
+        )
+        self.project_terminal_button = QPushButton("Open Terminal")
+        self.project_terminal_button.clicked.connect(
+            lambda: self._launch_selected_project("terminal")
+        )
+        self.project_remove_button = QPushButton("Remove / hide selected")
+        self.project_remove_button.clicked.connect(self._remove_selected_project)
+        for button in (
+            self.project_vscode_button, self.project_terminal_button,
+            self.project_remove_button,
+        ):
+            buttons.addWidget(button)
+        layout.addLayout(buttons)
+        manager = QHBoxLayout()
+        self.project_add_button = QPushButton("Add Project")
+        self.project_add_button.clicked.connect(self._add_project)
+        self.project_root_add_button = QPushButton("Authorize Discovery Folder")
+        self.project_root_add_button.clicked.connect(self._add_project_root)
+        self.project_refresh_button = QPushButton("Refresh Projects")
+        self.project_refresh_button.clicked.connect(self._refresh_projects)
+        for button in (
+            self.project_add_button, self.project_root_add_button,
+            self.project_refresh_button,
+        ):
+            manager.addWidget(button)
+        layout.addLayout(manager)
+        layout.addWidget(self._plain_label(
+            "Discovery includes only direct subfolders of authorized locations. "
+            "Remove a discovered project to hide it; remove its discovery folder to "
+            "stop scanning that location. Launching always requires confirmation."
+        ))
+        layout.addWidget(self._heading("Authorized discovery folders"))
+        self.project_root_list = QListWidget()
+        self.project_root_list.setMinimumHeight(75)
+        layout.addWidget(self.project_root_list)
+        self.project_root_remove_button = QPushButton("Remove selected discovery folder")
+        self.project_root_remove_button.clicked.connect(self._remove_project_root)
+        layout.addWidget(self.project_root_remove_button)
+        page.addWidget(panel)
+        page.addStretch(1)
+        self._refresh_projects()
+
+    def _refresh_projects(self) -> None:
+        self.project_list.clear()
+        self.project_root_list.clear()
+        try:
+            roots = self._projects.roots()
+            projects = self._projects.projects()
+        except ProjectError as exc:
+            self.projects_notice.setText(str(exc))
+            return
+        for root in roots:
+            item = QListWidgetItem(str(root))
+            item.setData(Qt.ItemDataRole.UserRole, str(root))
+            self.project_root_list.addItem(item)
+        for project in projects:
+            item = QListWidgetItem(
+                f"{project.name}  ·  {project.path}  ({project.source})"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, project.id)
+            self.project_list.addItem(item)
+        self.projects_notice.setText(
+            f"{len(projects)} project(s) · {len(roots)} authorized discovery folder(s)."
+        )
+
+    def _selected_project_id(self) -> str | None:
+        item = self.project_list.currentItem()
+        return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
+
+    def _add_project(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Select a project folder")
+        if not folder:
+            return
+        default_name = folder.rstrip("/\\").replace("\\", "/").split("/")[-1]
+        name, accepted = QInputDialog.getText(
+            self, "Add Project", "Project name:", text=default_name
+        )
+        if not accepted:
+            return
+        try:
+            self._projects.add_project(folder, name)
+            self._refresh_projects()
+        except ProjectError as exc:
+            QMessageBox.warning(self, "Project not added", str(exc))
+
+    def _add_project_root(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self, "Authorize folder for project discovery"
+        )
+        if not folder:
+            return
+        try:
+            self._projects.add_root(folder)
+            self._refresh_projects()
+        except ProjectError as exc:
+            QMessageBox.warning(self, "Discovery folder not added", str(exc))
+
+    def _remove_selected_project(self) -> None:
+        project_id = self._selected_project_id()
+        if project_id is None:
+            return
+        try:
+            project = self._projects.find(project_id)
+            answer = QMessageBox.question(
+                self, "Remove project",
+                f"Remove or hide {project.name} from FRIDAY's project list?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self._projects.remove_project(project_id)
+            self._refresh_projects()
+        except ProjectError as exc:
+            QMessageBox.warning(self, "Project unavailable", str(exc))
+
+    def _remove_project_root(self) -> None:
+        item = self.project_root_list.currentItem()
+        if item is None:
+            return
+        root = str(item.data(Qt.ItemDataRole.UserRole))
+        if QMessageBox.question(
+            self, "Stop project discovery",
+            "Stop discovering projects in the selected folder?",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._projects.remove_root(root)
+            self._refresh_projects()
+        except ProjectError as exc:
+            QMessageBox.warning(self, "Discovery folder unavailable", str(exc))
+
+    def _launch_selected_project(self, application: str) -> None:
+        project_id = self._selected_project_id()
+        if project_id is None:
+            return
+        try:
+            project = self._projects.find(project_id)
+            target = "VS Code" if application == "vscode" else "Windows Terminal"
+            if QMessageBox.question(
+                self, "Open project",
+                f"Open {project.name} in {target}?\\n{project.path}",
+            ) != QMessageBox.StandardButton.Yes:
+                return
+            self._project_launcher.launch(project_id, application)
+            self.projects_notice.setText(
+                f"Sent {project.name} to {target}; application startup is not verified."
+            )
+        except ProjectError as exc:
+            self.projects_notice.setText(str(exc))
+
     def _build_settings_page(self) -> None:
         page = self._new_page()
         voice = self._panel()
@@ -1357,6 +1539,8 @@ class DesktopWindow(QMainWindow):
         if in_voice:
             # Every entry starts uncluttered; no provider session is started.
             self._show_voice_context(None)
+        elif destination == "Projects":
+            self._refresh_projects()
 
     def _update_local_clock(self) -> None:
         local = datetime.now().astimezone()
