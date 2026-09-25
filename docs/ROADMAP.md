@@ -171,7 +171,8 @@
   Additional long-run stability and individual reminder/scheduler checks remain
   separate regression gates. The exact source and rollback are recorded in
   `docs/ACCEPTED_FOCUS_BASELINE.md`. PR #9 was merged into `main`;
-  PR #10 now targets `main` and awaits release authorization.
+  PR #10 was subsequently merged into `main`, with green offline
+  Windows/Ubuntu CI. Future hologram experiments start on separate branches.
 
 ## Later
 
