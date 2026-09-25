@@ -166,9 +166,12 @@
 - Preserve manual Connect/Stop, explicit reconnect, no persistent chat memory,
   no extra Gemini sessions for UI changes, read-only Brightspace and original
   scheduler/tray ownership. No transparent overlay or QML rewrite in scope.
-- Offline Windows/Ubuntu CI first, then manual Windows voice/approval,
-  narrow-window, hidden/tray and privacy acceptance. PR #9 remains the
-  v0.5.5 prerequisite; this work uses a separate stacked draft PR.
+- Offline Windows/Ubuntu CI passed at the accepted v0.5.6 head. User reported
+  working Windows focus view, Brightspace drawer and multi-turn conversation.
+  Additional long-run stability and individual reminder/scheduler checks remain
+  separate regression gates. The exact source and rollback are recorded in
+  `docs/ACCEPTED_FOCUS_BASELINE.md`. PR #9 remains the v0.5.5 prerequisite;
+  PR #10 remains a stacked draft until authorized review/merge.
 
 ## Later
 
