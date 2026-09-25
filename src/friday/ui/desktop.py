@@ -53,6 +53,7 @@ from friday.config import Settings
 from friday.core.session import SessionError, SessionManager
 from friday.providers.gemini_live import GeminiLiveProvider
 from friday.tools.project_launcher import ProjectLauncher
+from friday.tools.project_voice import ProjectLaunchProposals
 from friday.tools.projects import ProjectCatalog, ProjectError
 from friday.schedule import (
     ScheduleStore,
@@ -319,9 +320,13 @@ class DesktopThread(QThread):
         web: bool,
         max_seconds: int | None,
         academic: bool = False,
+        projects: bool = False,
+        project_catalog: ProjectCatalog | None = None,
     ) -> None:
         super().__init__()
         self.academic = academic
+        self.projects = projects
+        self.project_catalog = project_catalog
         self.input_device = input_device
         self.output_device = output_device
         self.input_language = input_language
@@ -364,6 +369,12 @@ class DesktopThread(QThread):
                 device=self.input_device,
             )
             approval = VoiceReminderApproval(ScheduleStore()) if self.reminders else None
+            project_proposals = (
+                ProjectLaunchProposals(
+                    self.project_catalog, ProjectLauncher(self.project_catalog)
+                )
+                if self.projects and self.project_catalog is not None else None
+            )
             manager = SessionManager(
                 GeminiLiveProvider(
                     settings, manual_activity=True, enable_local_clock=True,
@@ -372,6 +383,7 @@ class DesktopThread(QThread):
                         None if self.input_language == "auto" else self.input_language
                     ),
                     reminder_approval=approval,
+                    project_proposals=project_proposals,
                     enable_academic_calendar=self.academic,
                 ),
                 queue_size=settings.event_queue_size,
@@ -379,6 +391,7 @@ class DesktopThread(QThread):
             self._session = DesktopVoiceSession(
                 manager, microphone, speaker, approval=approval, emit=self.message.emit,
                 max_seconds=self.max_seconds or settings.max_session_seconds,
+                project_proposals=project_proposals,
             )
             if self._quit_requested.is_set():
                 return
@@ -442,6 +455,7 @@ class DesktopWindow(QMainWindow):
         self._state = "Disconnected"
         self._last_recovery: str | None = None
         self._draft: dict[str, str] | None = None
+        self._project_draft: dict[str, str] | None = None
         self._voice_panel: str | None = None
         self._focus_subtitle_speaker: str | None = None
         self.setWindowTitle(f"FRIDAY · v{__version__}")
@@ -948,6 +962,30 @@ class DesktopWindow(QMainWindow):
         approval_layout.addLayout(choice)
         voice.addWidget(self.approval_panel)
         self.approval_panel.hide()
+        self.project_approval_panel = QFrame()
+        self.project_approval_panel.setObjectName("approval")
+        project_approval_layout = QVBoxLayout(self.project_approval_panel)
+        project_approval_title = QLabel("Open a local project?")
+        project_approval_title.setObjectName("approvalTitle")
+        project_approval_layout.addWidget(project_approval_title)
+        self.project_draft_description = self._plain_label("")
+        project_approval_layout.addWidget(self.project_draft_description)
+        project_choice = QHBoxLayout()
+        self.project_approve_button = QPushButton("Open Project")
+        self.project_approve_button.setObjectName("approve")
+        self.project_approve_button.clicked.connect(
+            lambda: self._send("project_approve")
+        )
+        self.project_reject_button = QPushButton("Cancel")
+        self.project_reject_button.setObjectName("reject")
+        self.project_reject_button.clicked.connect(
+            lambda: self._send("project_reject")
+        )
+        project_choice.addWidget(self.project_approve_button)
+        project_choice.addWidget(self.project_reject_button)
+        project_approval_layout.addLayout(project_choice)
+        voice.addWidget(self.project_approval_panel)
+        self.project_approval_panel.hide()
         self.voice_options_box = QWidget()
         voice_options = QVBoxLayout(self.voice_options_box)
         voice_options.setContentsMargins(0, 0, 0, 0)
@@ -1329,6 +1367,11 @@ class DesktopWindow(QMainWindow):
         ))
         self.projects_notice = self._plain_label("No discovery folders authorized yet.")
         layout.addWidget(self.projects_notice)
+        self.project_voice_option = QCheckBox(
+            "Enable voice project requests (next connection; each launch requires a click)"
+        )
+        self.project_voice_option.setChecked(False)
+        layout.addWidget(self.project_voice_option)
         self.project_list = QListWidget()
         self.project_list.setMinimumHeight(220)
         layout.addWidget(self.project_list)
@@ -2027,6 +2070,12 @@ class DesktopWindow(QMainWindow):
         )
         self.approve_button.setEnabled(ready and self._draft is not None)
         self.reject_button.setEnabled(ready and self._draft is not None)
+        self.project_approve_button.setEnabled(ready and self._project_draft is not None)
+        self.project_reject_button.setEnabled(ready and self._project_draft is not None)
+        self.project_voice_option.setEnabled(
+            state in {"Disconnected", "Connection failed", *recoverable}
+            and not self._quitting and not self._closing
+        )
         self.academic_voice_option.setEnabled(
             self._academic_cache_ready
             and state in {"Disconnected", "Connection failed", *recoverable}
@@ -2051,6 +2100,8 @@ class DesktopWindow(QMainWindow):
             reminders=self.reminder_option.isChecked(), web=self.web_option.isChecked(),
             max_seconds=self._max_seconds,
             academic=self.academic_voice_option.isChecked(),
+            projects=self.project_voice_option.isChecked(),
+            project_catalog=self._projects,
         )
         self._worker = worker
         worker.message.connect(self._on_event)
@@ -2071,6 +2122,9 @@ class DesktopWindow(QMainWindow):
         if command in {"approve", "reject"}:
             self.approve_button.setEnabled(False)
             self.reject_button.setEnabled(False)
+        if command in {"project_approve", "project_reject"}:
+            self.project_approve_button.setEnabled(False)
+            self.project_reject_button.setEnabled(False)
 
     def _show_draft(self, draft: dict[str, str] | None) -> None:
         self._draft = draft
@@ -2096,6 +2150,19 @@ class DesktopWindow(QMainWindow):
         self._set_state(self._state)
         if draft is not None:
             # Keep the only approval controls visible without duplicating actions.
+            self._navigate("Voice")
+
+    def _show_project_draft(self, draft: dict[str, str] | None) -> None:
+        self._project_draft = draft
+        self.project_approval_panel.setVisible(draft is not None)
+        if draft is not None:
+            target = "VS Code" if draft["application"] == "vscode" else "Windows Terminal"
+            self.project_draft_description.setText(
+                f'{draft["name"]} → {target}\\n{draft["path"]}\\n'
+                "Nothing opens until you click Open Project."
+            )
+        self._set_state(self._state)
+        if draft is not None:
             self._navigate("Voice")
 
     def _on_event(self, kind: str, value: Any) -> None:
@@ -2133,6 +2200,20 @@ class DesktopWindow(QMainWindow):
             self._append("Error", str(value))
         elif kind == "draft":
             self._show_draft(value)
+        elif kind == "project_draft":
+            self._show_project_draft(value)
+        elif kind == "project_result":
+            status = value.get("status", "error")
+            if status == "launched":
+                self._append(
+                    "Confirmed",
+                    f"Sent {value['project']} to {value['application']}; "
+                    "application startup is not verified.",
+                )
+            elif status == "rejected":
+                self._append("Confirmed", "Project launch cancelled.")
+            else:
+                self._append("System", "Project launch unavailable or expired.")
         elif kind == "reminders":
             self.reminder_list.clear()
             for item in value:
@@ -2171,6 +2252,7 @@ class DesktopWindow(QMainWindow):
             self._worker.deleteLater()
             self._worker = None
         self._show_draft(None)
+        self._show_project_draft(None)
         states = {
             "connection": "Connection lost",
             "audio": "Audio unavailable",
