@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from friday.brightspace_calendar import AcademicStore, parse_calendar
+from friday.brightspace_calendar import AcademicSnapshot, AcademicStore, parse_calendar
 from friday.tools.academic_calendar import ACADEMIC_TOOL_NAME, register_academic_calendar
 from friday.tools.registry import ToolRegistry
 
@@ -97,3 +97,23 @@ END:VCALENDAR
     assert result["items"][0]["source_labeled_due"] is True
     assert result["items"][0]["explicit_due"] is False
     assert "http" not in str(result["items"][0])
+
+
+def test_last_success_uses_computer_local_time_not_unlabeled_utc(tmp_path, monkeypatch):
+    store = AcademicStore(tmp_path / "academic.sqlite3")
+    instant = "2026-09-25T01:34:00+00:00"
+    monkeypatch.setattr(
+        store,
+        "upcoming",
+        lambda **_kwargs: AcademicSnapshot(items=(), last_success=instant),
+    )
+    registry = ToolRegistry()
+    register_academic_calendar(registry, store)
+    result = registry.execute(ACADEMIC_TOOL_NAME, {})
+    local = datetime.fromisoformat(instant).astimezone()
+    assert result["status"] == "ok"
+    assert result["last_success_local"] == local.isoformat(timespec="seconds")
+    assert result["last_success_display"] == local.strftime(
+        "%B %d, %Y at %I:%M %p %Z (computer local time)"
+    )
+    assert "last_success" not in result  # Never hand an unlabeled UTC date to Gemini.
