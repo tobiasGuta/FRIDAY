@@ -1293,6 +1293,13 @@ class DesktopWindow(QMainWindow):
         self.page_subtitle.setText(self._page_subtitles[destination])
         for name, button in self.nav_buttons.items():
             button.setChecked(name == destination)
+        in_voice = destination == "Voice"
+        self.sidebar.setVisible(not in_voice)
+        self.top_bar.setVisible(not in_voice)
+        self.page_subtitle.setVisible(not in_voice)
+        if in_voice:
+            # Every entry starts uncluttered; no provider session is started.
+            self._show_voice_context(None)
 
     def _update_local_clock(self) -> None:
         local = datetime.now().astimezone()
@@ -1484,6 +1491,8 @@ class DesktopWindow(QMainWindow):
         self.top_academic_status.setText(label)
         self._refresh_home_academic()
         self._refresh_voice_context()
+        if self._voice_panel == "academic":
+            self._populate_voice_context("academic")
 
     def _save_academic_feed(self) -> None:
         if self._academic_sync is not None or self._quitting or self._closing:
@@ -1695,6 +1704,14 @@ class DesktopWindow(QMainWindow):
         if text:
             self.transcript.appendPlainText(f"{label}: {text}")
             self._append_voice_bubble(label, text)
+            if label in {"You", "FRIDAY"}:
+                if self._focus_subtitle_speaker == label and label == "FRIDAY":
+                    updated = (self.focus_subtitle.text() + " " + text).strip()
+                else:
+                    updated = text.strip()
+                self._focus_subtitle_speaker = label
+                # No HTML interpretation, recording, or persisted history.
+                self.focus_subtitle.setText(updated[-250:])
 
     def _set_state(self, state: str) -> None:
         self._state = state
@@ -1759,6 +1776,8 @@ class DesktopWindow(QMainWindow):
             )
         )
         self.connect_button.setEnabled(state not in {"Disconnecting"})
+        self.focus_connect_button.setText(self.connect_button.text())
+        self.focus_connect_button.setEnabled(self.connect_button.isEnabled())
         self.reminder_option.setEnabled(
             state in {"Disconnected", "Connection failed"} or state in recoverable
         )
@@ -1851,6 +1870,22 @@ class DesktopWindow(QMainWindow):
             if isinstance(text, str) and text.strip():
                 prefix = "You" if speaker == "user" else "FRIDAY"
                 self.home_recent.setText(f"{prefix}: {text.strip()[:240]}")
+                if speaker == "user":
+                    target = focus_ui_target(text)
+                    if target is not None and self.page_title.text() in {"Home", "Voice"}:
+                        if self.page_title.text() == "Home":
+                            self._navigate("Voice")
+                        self._show_voice_context(None if target == "focus" else target)
+                    elif self._voice_panel is not None and self.page_title.text() == "Voice":
+                        # Ordinary conversation returns to the uncluttered orb.
+                        self._show_voice_context(None)
+        elif kind == "context":
+            # Only named read-only tool outcomes can auto-reveal local data.
+            if value in {"academic", "reminders"}:
+                if self.page_title.text() == "Home":
+                    self._navigate("Voice")
+                if self.page_title.text() == "Voice":
+                    self._show_voice_context(value)
         elif kind == "notice":
             self._append("System", str(value))
         elif kind == "error":
@@ -1870,6 +1905,8 @@ class DesktopWindow(QMainWindow):
                 f"{len(value)} pending reminder(s) reported by the current voice session."
             )
             self._refresh_voice_context()
+            if self._voice_panel == "reminders":
+                self._populate_voice_context("reminders")
         elif kind == "sources":
             for item in value:
                 self._append("Source", f"{item['title']} — {item['url']}")
