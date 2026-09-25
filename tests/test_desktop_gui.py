@@ -351,3 +351,130 @@ def test_voice_recovery_does_not_stop_separate_desktop_scheduler():
     finally:
         window._scheduler = None
         window.close()
+
+
+def test_brightspace_is_offline_and_requires_explicit_sync(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        assert window._academic_sync is None
+        assert window.academic_feed_input.echoMode() == desktop.QLineEdit.EchoMode.Password
+        assert not window.academic_voice_option.isChecked()
+        assert not window.academic_auto_option.isChecked()
+        assert not window.academic_voice_option.isEnabled()
+        assert not (tmp_path / "FRIDAY" / "brightspace.sqlite3").exists()
+    finally:
+        window.close()
+
+
+def test_brightspace_secret_is_cleared_from_ui_without_logging(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    saved = []
+    monkeypatch.setattr(desktop, "save_feed", lambda value: saved.append(value))
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    secret = "https://brightspace.cuny.edu/d2l/le/feed/private?token=hidden-in-test"
+    try:
+        assert app is not None
+        window.academic_feed_input.setText(secret)
+        window._save_academic_feed()
+        assert saved == [secret]
+        assert window.academic_feed_input.text() == ""
+        assert secret not in window.academic_status.text()
+        assert secret not in window.transcript.toPlainText()
+        assert "Sync now" in window.academic_status.text()
+    finally:
+        window.close()
+
+
+def test_brightspace_worker_lifecycle_keeps_voice_and_scheduler_independent(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+
+    class TestSignal:
+        def __init__(self):
+            self.listeners = []
+
+        def connect(self, listener):
+            self.listeners.append(listener)
+
+    class FakeAcademicThread:
+        def __init__(self):
+            self.completed = TestSignal()
+            self.failed = TestSignal()
+            self.finished = TestSignal()
+            self.started = False
+            self.deleted = False
+
+        def start(self):
+            self.started = True
+
+        def deleteLater(self):
+            self.deleted = True
+
+    monkeypatch.setattr(desktop, "AcademicSyncThread", FakeAcademicThread)
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        window._sync_academic()
+        worker = window._academic_sync
+        assert worker.started
+        assert not window.academic_sync_button.isEnabled()
+        assert window._worker is None and window._scheduler is None
+        window._sync_academic()
+        assert window._academic_sync is worker  # No duplicate HTTP request.
+        window._academic_failed("Calendar request failed.")
+        assert "cached data" in window.academic_status.text()
+        window._academic_finished()
+        assert worker.deleted and window._academic_sync is None
+        assert window.academic_sync_button.isEnabled()
+        assert window._worker is None and window._scheduler is None
+    finally:
+        window.close()
+
+
+def test_brightspace_due_named_event_is_not_presented_as_explicit_task(
+    monkeypatch, tmp_path
+):
+    from friday.brightspace_calendar import AcademicStore, parse_calendar
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    payload = b"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:worksheet
+DTSTART:20991005T235900Z
+SUMMARY:Worksheet I - Due
+END:VEVENT
+BEGIN:VTODO
+UID:task
+DUE;VALUE=DATE:20991006
+SUMMARY:Actual VTODO task
+END:VTODO
+END:VCALENDAR
+"""
+    store = AcademicStore()
+    store.replace(parse_calendar(payload))
+    app = QApplication.instance() or QApplication([])
+    window = DesktopWindow()
+    try:
+        assert app is not None
+        # Use a known, synthetic local-cache snapshot regardless of wall clock.
+        monkeypatch.setattr(
+            AcademicStore,
+            "upcoming",
+            lambda self, **_kwargs: self.snapshot(),
+        )
+        window._display_academic_cached()
+        labels = [
+            window.academic_list.item(i).text()
+            for i in range(window.academic_list.count())
+        ]
+        assert any("Brightspace-labeled due (event): Worksheet I - Due" in x for x in labels)
+        assert any("Due (task): Actual VTODO task" in x for x in labels)
+    finally:
+        window.close()

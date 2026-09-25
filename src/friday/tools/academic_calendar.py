@@ -1,0 +1,79 @@
+"""Explicit, bounded read-only academic calendar capability for Gemini Live."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from friday.brightspace_calendar import (
+    AcademicStore,
+    BrightspaceError,
+    display_time,
+    local_date,
+    source_labeled_due,
+)
+from friday.tools.registry import NoArguments, ToolRegistry, ToolSpec
+
+ACADEMIC_TOOL_NAME = "get_academic_calendar"
+
+
+def register_academic_calendar(
+    registry: ToolRegistry, store: AcademicStore | None = None
+) -> None:
+    database = store or AcademicStore()
+
+    def read(_arguments: NoArguments) -> dict[str, Any]:
+        try:
+            result = database.upcoming(days=7, limit=10)
+        except (BrightspaceError, OSError, ValueError):
+            return {"status": "error", "error": "academic_cache_unavailable"}
+        if result.last_success is None:
+            return {"status": "error", "error": "academic_calendar_not_synced"}
+        try:
+            # SQLite stores an unambiguous UTC instant; the voice tool must
+            # explicitly convert it to the user's computer timezone.
+            last_local = datetime.fromisoformat(result.last_success).astimezone()
+        except ValueError:
+            return {"status": "error", "error": "academic_cache_unavailable"}
+        return {
+            "status": "ok",
+            "source": "CUNY Brightspace iCalendar (local read-only cache)",
+            "last_success_local": last_local.isoformat(timespec="seconds"),
+            "last_success_display": last_local.strftime(
+                "%B %d, %Y at %I:%M %p %Z (computer local time)"
+            ),
+            "coverage": (
+                "Only items published to the calendar feed; not a complete assignment list."
+            ),
+            "recurrence_note": "Recurring series are not expanded into every occurrence.",
+            "items": [
+                {
+                    "title": item.title,
+                    "calendar_time": display_time(item),
+                    "calendar_date": local_date(item),
+                    "kind": item.kind,
+                    "explicit_due": item.explicit_due,
+                    "source_labeled_due": source_labeled_due(item),
+                    "recurring_series": item.recurring,
+                }
+                for item in result.items
+            ],
+        }
+
+    registry.register(
+        ToolSpec(
+            name=ACADEMIC_TOOL_NAME,
+            description=(
+                "Read up to 10 upcoming items in the next 7 days from the locally synced "
+                "CUNY Brightspace calendar. Does not fetch the internet, submit work, "
+                "or access grades. Only task DUE is an explicit deadline; VEVENT DTSTART "
+                "is a scheduled event, not proof of a submission deadline. "
+                "source_labeled_due reports a title ending in ' - Due' as a "
+                "Brightspace source label only, not a verified due timestamp. "
+                "Empty results do not prove there are no assignments."
+            ),
+            arguments=NoArguments,
+            handler=read,
+            notice="Read up to 10 locally cached Brightspace calendar items.",
+        )
+    )

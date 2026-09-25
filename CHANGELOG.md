@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.4 — Brightspace calendar intelligence (Windows live-feed acceptance pending)
+
+- Add a strictly read-only CUNY Brightspace iCalendar connector. An explicit
+  user action saves a private HTTPS subscription in the operating-system
+  credential vault; there is no CUNY password or OAuth bypass, no raw feed
+  output or logging, and no automatic network access at startup.
+- Validate the exact CUNY feed host, disable redirects, enforce decompressed
+  response size limits, and parse VEVENT / VTODO with source date semantics.
+  Only VTODO DUE is labeled an explicit deadline. VEVENT titles ending
+  in ' - Due' carry a separate Brightspace source-label signal, not an
+  independently verified submission deadline. Recurring series are flagged
+  but not expanded and the calendar does not prove all coursework is covered.
+- Store validated snapshots transactionally in separate SQLite storage; failure
+  preserves the previously validated snapshot and changing/removing feed
+  credentials erases the previous cache. Do not write Google Calendar events.
+- Add masked desktop feed field, explicit Sync now and Remove feed, upcoming
+  academic agenda, source freshness display, optional 30-minute background
+  refresh while the desktop scheduler runs, and opt-in read-only voice lookup.
+- Keep Gemini disconnected by default and use cached bounded tool responses
+  only when the user enables academic voice lookup before connecting. Convert
+  the stored UTC sync instant to the computer's local date/time for spoken
+  freshness reports, avoiding midnight UTC date rollover.
+- Cover fixtures, credential handling, HTTPS rejection, cache behavior and
+  desktop controls offline. Production feed and Windows credential-store
+  acceptance remain pending.
+
+
 ## 0.5.3 — Voice reliability and explicit recovery (Windows acceptance pending)
 
 - Detect unexpected Gemini event-stream termination, failed audio sends and

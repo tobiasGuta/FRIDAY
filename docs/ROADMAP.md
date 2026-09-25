@@ -115,6 +115,21 @@
 - Fake provider/audio/Qt tests; Windows network/headset and longer-session
   acceptance required before merging.
 
+## v0.5.4 — Brightspace calendar intelligence (draft)
+
+- Personal, read-only iCalendar feed with CUNY tenant host allowlist.
+- Private subscription saved only in OS credential storage; no raw URL logs,
+  plaintext configuration, browser automation, or institutional credentials.
+- Bounded validation and transactional local academic snapshot; preserve cached
+  data on failures, track last successful sync, and erase cache on disconnect.
+- Distinguish VEVENT scheduled times from VTODO explicit DUE, all-day events,
+  timezone data, and recurring-series limitations. Never claim the calendar
+  is a complete assignment list.
+- Masked desktop feed entry, explicit sync, optional refresh only while the
+  desktop-managed scheduler runs, and separately opted-in read-only model tool.
+- No grade access, submission, Google auto-publishing or persistent voice memory.
+- Offline CI and real Windows credential + CUNY feed acceptance required.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

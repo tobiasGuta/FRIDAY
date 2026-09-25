@@ -1,12 +1,12 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.5.3 adds explicit voice-session recovery and microphone failure detection while preserving the desktop-managed scheduler.**
+A harness-first personal AI assistant. **v0.5.4 adds opt-in, read-only CUNY Brightspace calendar intelligence alongside the established desktop scheduler and voice recovery.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
-## What works today (v0.5.3)
+## What works today (v0.5.4)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
 - `friday demo`: simulated conversation with a fake provider; no network or key needed.
@@ -44,7 +44,7 @@ python -m pytest
 
 On PowerShell, `'.[gemini,voice,web,dev]'` works as written. With `uv`, install the gemini, voice, and dev extras.
 
-## FRIDAY desktop interface (v0.5.3)
+## FRIDAY desktop interface (v0.5.4)
 
 The optional PySide6 shell provides click-to-talk, an animated voice orb, plain-text
 transcripts, an upcoming-reminders list and app-owned **Confirm / Cancel** controls.
@@ -56,7 +56,7 @@ Install dependencies in the project virtual environment:
 ```powershell
 cd D:\Tools\FRIDAY
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e '.[gemini,voice,web,schedule,calendar,desktop,dev]'
+python -m pip install -e '.[gemini,voice,web,schedule,calendar,desktop,brightspace,dev]'
 python -m friday desktop --input-device 1
 ```
 
@@ -65,6 +65,56 @@ until you click **Connect**. Use **Start talking**, speak, then **Stop recording
 wait for **Ready** before the next turn. Reminder drafts are on by default and web
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
+
+### Brightspace calendar (v0.5.4; live Windows acceptance pending)
+
+The optional `brightspace` extra provides iCalendar parsing, HTTPS retrieval
+and protected credential storage. This is **not** an official Brightspace OAuth
+app and FRIDAY never asks for your CUNY sign-in credentials. Your account must
+already expose the official **All Calendars and Tasks** subscription in the
+Brightspace Calendar tool.
+
+1. In Brightspace, enable Calendar Feeds and open **Subscribe**. Select
+   **All Calendars and Tasks**. Keep its private subscription URL secret.
+2. Quit FRIDAY completely from the system tray, install the extras shown above,
+   and relaunch the desktop shortcut.
+3. Open the **Brightspace** tab under the conversation panel. Paste the URL
+   **only into FRIDAY's masked field**, then click **Save feed**. The URL is
+   written to the OS credential vault, not to the repository or a plaintext
+   configuration. If protected storage is unavailable, saving fails closed.
+4. Click **Sync now**. The read-only HTTP worker retrieves and parses the feed,
+   shows the next seven days of published calendar items, and identifies the
+   last successful refresh. No Gemini connection is required to sync.
+5. To allow FRIDAY to answer calendar questions, check **Enable read-only
+   academic voice lookup** before clicking Connect. This permission applies to
+   the next Live session; it does not expose the subscription address.
+6. Optional: check **Refresh every 30 min while scheduler runs** after a
+   successful manual sync. It refreshes only while FRIDAY's owned desktop
+   scheduler is active (including when the window is hidden). No periodic sync
+   starts automatically when you open the app.
+7. **Remove feed** asks for confirmation, then deletes the stored credential
+   and local academic snapshot. No assignment submission or Google Calendar
+   event is created by this integration.
+
+The implementation only accepts an HTTPS feed hosted at
+`brightspace.cuny.edu`. It will not follow redirects to another hostname;
+if your official private feed uses a different domain, do **not** work around
+this by disabling URL checks. Report only the hostname (not the private URL)
+so we can evaluate a justified allowlist change.
+
+**Calendar coverage limitation:** VEVENT start times are scheduled
+events, not independently verified submission due dates. A VEVENT whose
+source title ends in ` - Due` is displayed as **Brightspace-labeled due
+(event)**, distinct from an explicit VTODO DUE deadline. This label reflects
+Brightspace's title, not an independent submission-time verification.
+All-day dates remain dates, not UTC midnight. Recurrence rules are flagged,
+not expanded; the list may omit individual later instances.
+Brightspace's feed can omit activities that lack published calendar dates.
+FRIDAY must never equate an empty agenda with "no assignments." On sync
+failure the previously validated cache remains, but its last-success timestamp
+must be considered when answering questions. This is **not** grades or a
+complete assignment API. No private URL or raw calendar file should ever be
+shared in an issue, chat, or test fixture.
 
 ### Create a desktop shortcut (Windows)
 
