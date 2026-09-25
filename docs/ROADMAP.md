@@ -130,6 +130,23 @@
 - No grade access, submission, Google auto-publishing or persistent voice memory.
 - Offline CI and real Windows credential + CUNY feed acceptance required.
 
+## v0.5.5 — Hybrid dashboard and cinematic voice UI
+
+- **Slice 1, implementation branch:** six navigable Qt Widgets pages and a
+  dashboard shell, with canonical voice / reminder / Brightspace / scheduler
+  controls moved intact. Mirror live state; no new tool permissions, network
+  calls on startup, or persistent chat history.
+- **Slice 2:** improve Home's adaptive card layout and hierarchy; no invented
+  Google Calendar events or reminder approvals.
+- **Slice 3:** state-driven cinematic orb and richer session-only conversation
+  presentation; preserve click-to-talk, bounded audio and manual reconnect.
+- **Slice 4:** Academic cards and course filters only when actual feed data
+  supports reliable course association; preserve source-labeled versus
+  explicit due semantics.
+- **Slice 5:** screen-size, keyboard, accessibility, DPI and theme polish.
+- Offline CI, then Windows layout/headset/tray/credential acceptance are
+  required before merging this UI milestone.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.
