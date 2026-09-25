@@ -34,6 +34,20 @@ QLabel#eyebrow {
 }
 QLabel#itemTitle { color: #F3F9FF; font-size: 14px; font-weight: bold; }
 QLabel#summaryBadge { color: #9EDACC; font-size: 11px; font-weight: bold; }
+QFrame#focusVoiceStage {
+    background-color: #080F1D; border: none; border-radius: 0;
+}
+QWidget#voiceRightHost { background-color: #080F1D; }
+QLabel#focusSubtitle {
+    color: #F9D9A5; font-size: 16px; padding: 5px 16px;
+}
+QPushButton#focusControl {
+    background-color: #101B29; border: 1px solid #3A3024;
+    color: #D7B890; border-radius: 10px; padding: 8px 12px;
+}
+QPushButton#focusControl:hover {
+    background-color: #302419; border-color: #B18043;
+}
 QFrame#voiceStage {
     background-color: qlineargradient(x1:0,y1:0,x2:1,y2:1,
                                       stop:0 #0D223E,stop:0.55 #15385D,
