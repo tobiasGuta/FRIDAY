@@ -489,8 +489,8 @@ def test_hybrid_shell_navigation_exposes_six_real_pages_without_starting_workers
         assert tuple(window.nav_buttons) == (
             "Home", "Voice", "Academic", "Reminders", "Calendar", "Settings"
         )
-        assert window.page_title.text() == "Home"
-        assert window.nav_buttons["Home"].isChecked()
+        assert window.page_title.text() == "Voice"
+        assert window.nav_buttons["Voice"].isChecked()
         for index, page in enumerate(window.nav_buttons):
             window._navigate(page)
             assert window.pages.currentIndex() == index
@@ -684,7 +684,8 @@ def test_cinematic_voice_page_uses_actual_session_states_without_audio():
         assert app is not None
         window._navigate("Voice")
         assert window.orb._cinematic
-        assert window.orb.width() == 260
+        assert window.orb.width() == 338
+        assert window.orb._hologram
         assert window._worker is None
         assert window._state == "Disconnected"
         assert not window.mic_button.isEnabled()
@@ -759,7 +760,10 @@ def test_cinematic_bubbles_are_plaintext_bounded_and_raw_transcript_retained():
         assert len(window._voice_bubble_entries) == 2
         assert window._voice_bubble_entries[-1][1].text() == "First chunk"
 
+        # The transcript is now an explicit panel rather than persistent clutter.
+        window._show_voice_context("transcript")
         window.full_transcript_button.setChecked(True)
+        app.processEvents()
         assert window.transcript.isVisibleTo(window)
         assert window.full_transcript_button.text() == "Hide full text transcript"
         window.full_transcript_button.setChecked(False)
