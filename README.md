@@ -115,9 +115,11 @@ If FRIDAY says `Voice response stalled for 30 seconds` after it already
 spoke, the current voice worker is still waiting for a final Live API
 `turn_complete` signal. This is an existing safety gate, not a Voice
 page animation timeout. The draft diagnostic emits one safe summary on
-failure with four booleans:
-`generation_complete`, `turn_complete`, `assistant_text`, and
-`audio_received`. No speech content, PCM, raw provider messages,
+failure with five booleans:
+`generation_complete`, `turn_complete`, `assistant_text`,
+`audio_received`, and `audio_callback` (PCM delivered to the local
+output callback; this does not prove audible speaker output).
+No speech content, PCM, raw provider messages,
 credentials, or subscription URLs are included. The session still closes
 safely and requires an **explicit** reconnect; do not treat
 `generation_complete` as final turn completion or auto-reconnect.
