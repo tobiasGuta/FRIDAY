@@ -701,22 +701,41 @@ class DesktopWindow(QMainWindow):
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
         self._adapt_home_layout(event.size().width())
+        self._adapt_voice_layout(event.size().width())
 
     def _build_voice_page(self, reminders: bool, web: bool) -> None:
+        """Cinematic presentation of the existing click-to-talk voice session."""
         page = self._new_page()
-        row = QHBoxLayout()
-        row.setSpacing(13)
+        page.setSpacing(13)
+        ribbon = self._panel()
+        ribbon.setObjectName("voiceRibbon")
+        ribbon_layout = QHBoxLayout(ribbon)
+        ribbon_layout.setContentsMargins(16, 11, 16, 11)
+        ribbon_layout.addWidget(self._plain_label(
+            "LIVE VOICE · manual microphone · no wake word"
+        ), 1)
+        self.voice_state_badge = QLabel("Disconnected")
+        self.voice_state_badge.setObjectName("voiceStateBadge")
+        self.voice_state_badge.setTextFormat(Qt.TextFormat.PlainText)
+        ribbon_layout.addWidget(self.voice_state_badge)
+        page.addWidget(ribbon)
+
+        self.voice_columns = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.voice_columns.setSpacing(14)
         stage = self._panel()
         stage.setObjectName("voiceStage")
+        stage.setMinimumWidth(290)
         voice = QVBoxLayout(stage)
-        voice.setContentsMargins(20, 18, 20, 18)
+        voice.setContentsMargins(22, 21, 22, 19)
         voice.setSpacing(12)
-        voice.addLayout(self._heading("VOICE SESSION", subtitle="Manual click-to-talk"))
+        eyebrow = QLabel("FRIDAY · VOICE")
+        eyebrow.setObjectName("eyebrow")
+        voice.addWidget(eyebrow, alignment=Qt.AlignmentFlag.AlignHCenter)
         voice.addStretch(1)
-        self.orb = VoiceOrb()
+        self.orb = VoiceOrb(diameter=260, cinematic=True)
         voice.addWidget(self.orb, alignment=Qt.AlignmentFlag.AlignHCenter)
         self.voice_title = QLabel("FRIDAY is offline")
-        self.voice_title.setObjectName("section")
+        self.voice_title.setObjectName("voiceHeadline")
         self.voice_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         voice.addWidget(self.voice_title)
         self.voice_hint = self._plain_label(
@@ -724,11 +743,21 @@ class DesktopWindow(QMainWindow):
         )
         self.voice_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         voice.addWidget(self.voice_hint)
+        self.voice_activity = self._plain_label(
+            "Microphone is off until you press Start talking."
+        )
+        self.voice_activity.setObjectName("voiceActivity")
+        self.voice_activity.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        voice.addWidget(self.voice_activity)
         self.mic_button = QPushButton("Start talking")
         self.mic_button.setObjectName("primary")
-        self.mic_button.setMinimumHeight(53)
+        self.mic_button.setMinimumHeight(55)
+        self.mic_button.setAccessibleName("Start or stop microphone recording")
         self.mic_button.clicked.connect(self._toggle_microphone)
         voice.addWidget(self.mic_button)
+        voice.addWidget(self._plain_label(
+            "Connect or disconnect from the top bar. Recording only starts when you click."
+        ))
         voice.addStretch(1)
 
         self.approval_panel = QFrame()
@@ -751,32 +780,145 @@ class DesktopWindow(QMainWindow):
         approval_layout.addLayout(choice)
         voice.addWidget(self.approval_panel)
         self.approval_panel.hide()
-
         self.reminder_option = QCheckBox("Enable reminder drafts and approval")
         self.reminder_option.setChecked(reminders)
         self.web_option = QCheckBox("Enable web search (uses API credits)")
         self.web_option.setChecked(web)
         voice.addWidget(self.reminder_option)
         voice.addWidget(self.web_option)
-        row.addWidget(stage, 5)
+        self.voice_columns.addWidget(stage, 5)
 
+        right = QVBoxLayout()
+        right.setSpacing(13)
         transcript_panel = self._panel()
         transcript_layout = QVBoxLayout(transcript_panel)
         transcript_layout.setContentsMargins(15, 16, 15, 15)
+        transcript_layout.setSpacing(9)
         transcript_layout.addLayout(self._heading(
-            "CONVERSATION",
-            subtitle="Live transcript · current session only · plain text",
+            "LIVE CONVERSATION",
+            subtitle="Visual transcript · window-only · untrusted text stays plain",
         ))
+        self.voice_bubble_scroll = QScrollArea()
+        self.voice_bubble_scroll.setObjectName("bubbleViewport")
+        self.voice_bubble_scroll.setWidgetResizable(True)
+        self.voice_bubble_scroll.setMinimumHeight(290)
+        bubble_canvas = QWidget()
+        bubble_canvas.setObjectName("bubbleCanvas")
+        self.voice_bubble_layout = QVBoxLayout(bubble_canvas)
+        self.voice_bubble_layout.setContentsMargins(8, 8, 8, 8)
+        self.voice_bubble_layout.setSpacing(9)
+        self.voice_bubble_empty = self._plain_label(
+            "Connect and talk to FRIDAY. The conversation will appear here."
+        )
+        self.voice_bubble_layout.addWidget(self.voice_bubble_empty)
+        self.voice_bubble_layout.addStretch(1)
+        self.voice_bubble_scroll.setWidget(bubble_canvas)
+        transcript_layout.addWidget(self.voice_bubble_scroll, 1)
+        self._voice_bubble_entries: list[tuple[str, QLabel, QFrame]] = []
+        self.full_transcript_button = QPushButton("Show full text transcript")
+        self.full_transcript_button.setCheckable(True)
+        self.full_transcript_button.toggled.connect(self._toggle_full_transcript)
+        transcript_layout.addWidget(self.full_transcript_button)
         self.transcript = QPlainTextEdit()
         self.transcript.setReadOnly(True)
         self.transcript.document().setMaximumBlockCount(250)
         self.transcript.setPlaceholderText("Your conversation appears here while connected.")
-        transcript_layout.addWidget(self.transcript, 1)
-        row.addWidget(transcript_panel, 6)
-        page.addLayout(row, 1)
-        page.addWidget(self._plain_label(
-            "FRIDAY uses manual microphone control. No wake word or saved conversation history."
+        self.transcript.setMinimumHeight(130)
+        self.transcript.hide()
+        transcript_layout.addWidget(self.transcript)
+        self.voice_columns.addLayout(right, 6)
+        right.addWidget(transcript_panel, 3)
+
+        glance = self._panel()
+        glance_layout = QVBoxLayout(glance)
+        glance_layout.setContentsMargins(15, 13, 15, 13)
+        glance_layout.setSpacing(8)
+        glance_layout.addLayout(self._heading(
+            "TODAY AT A GLANCE",
+            subtitle="Local snapshots only · no background model request",
         ))
+        self.voice_context_academic = self._plain_label("Brightspace: not synced")
+        self.voice_context_reminders = self._plain_label("Reminders: checking local data")
+        self.voice_context_scheduler = self._plain_label("Scheduler: checking worker")
+        glance_layout.addWidget(self.voice_context_academic)
+        glance_layout.addWidget(self.voice_context_reminders)
+        glance_layout.addWidget(self.voice_context_scheduler)
+        context_actions = QHBoxLayout()
+        context_actions.addWidget(self._open_page_button("Academic", "Academic"))
+        context_actions.addWidget(self._open_page_button("Reminders", "Reminders"))
+        glance_layout.addLayout(context_actions)
+        right.addWidget(glance, 1)
+        page.addLayout(self.voice_columns, 1)
+        page.addWidget(self._plain_label(
+            "Try asking: \"What's due today?\" or \"List my reminders.\" "
+            "These are examples, not auto-sent commands."
+        ))
+        self._adapt_voice_layout(self.width())
+
+    def _toggle_full_transcript(self, checked: bool) -> None:
+        self.transcript.setVisible(checked)
+        self.full_transcript_button.setText(
+            "Hide full text transcript" if checked else "Show full text transcript"
+        )
+
+    def _refresh_voice_context(self) -> None:
+        """Read only in-memory UI summaries; never call a model or fetch Brightspace."""
+        self.voice_context_academic.setText(self.home_academic_status.text())
+        self.voice_context_reminders.setText(self.home_reminder_status.text())
+        self.voice_context_scheduler.setText(self.home_scheduler_status.text())
+
+    def _append_voice_bubble(self, speaker: str, content: str) -> None:
+        """Bounded in-memory, plain-text rendering; canonical raw text remains below."""
+        if not content:
+            return
+        if speaker == "FRIDAY" and self._voice_bubble_entries:
+            previous_speaker, label, _frame = self._voice_bubble_entries[-1]
+            if previous_speaker == "FRIDAY" and len(label.text()) < 900:
+                label.setText((label.text() + " " + content).strip()[:1200])
+                self.voice_bubble_scroll.verticalScrollBar().setValue(
+                    self.voice_bubble_scroll.verticalScrollBar().maximum()
+                )
+                return
+        if len(self._voice_bubble_entries) >= 36:
+            _old_speaker, _old_label, old_frame = self._voice_bubble_entries.pop(0)
+            self.voice_bubble_layout.removeWidget(old_frame)
+            old_frame.deleteLater()
+        self.voice_bubble_empty.hide()
+        card = QFrame()
+        card.setObjectName(
+            "userBubble" if speaker == "You"
+            else "assistantBubble" if speaker == "FRIDAY" else "systemBubble"
+        )
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(13, 10, 13, 10)
+        layout.setSpacing(4)
+        role = QLabel(speaker)
+        role.setObjectName("bubbleRole")
+        role.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(role)
+        label = self._plain_label(content[:1200])
+        label.setObjectName("bubbleText")
+        layout.addWidget(label)
+        self.voice_bubble_layout.insertWidget(
+            self.voice_bubble_layout.count() - 1, card
+        )
+        self._voice_bubble_entries.append((speaker, label, card))
+        QTimer.singleShot(
+            0,
+            lambda: self.voice_bubble_scroll.verticalScrollBar().setValue(
+                self.voice_bubble_scroll.verticalScrollBar().maximum()
+            ),
+        )
+
+    def _adapt_voice_layout(self, width: int) -> None:
+        if not hasattr(self, "voice_columns"):
+            return
+        self.voice_columns.setDirection(
+            QBoxLayout.Direction.TopToBottom
+            if width < 1120 else QBoxLayout.Direction.LeftToRight
+        )
+        self.voice_columns.setStretch(0, 0 if width < 1120 else 5)
+        self.voice_columns.setStretch(1, 0 if width < 1120 else 6)
 
     def _build_academic_page(self) -> None:
         page = self._new_page()
