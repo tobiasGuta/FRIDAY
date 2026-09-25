@@ -1008,7 +1008,8 @@ class DesktopWindow(QMainWindow):
         self.voice_right_host.setVisible(kind is not None)
         self.voice_transcript_panel.setVisible(kind == "transcript")
         self.voice_context_panel.setVisible(kind in {"academic", "reminders", "calendar"})
-        self.voice_context_glance.setVisible(kind == "transcript")
+        # Even transcript mode stays focused: other dashboards only show on request.
+        self.voice_context_glance.setVisible(False)
         self.voice_options_box.setVisible(kind == "transcript")
         self.voice_ribbon.setVisible(kind == "transcript")
         self.voice_stage.setObjectName(
