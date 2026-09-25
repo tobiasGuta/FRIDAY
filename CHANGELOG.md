@@ -12,8 +12,7 @@
 - Include Qt rendering tests and fake/no-worker UI regressions. Tiny orbiting
   particles and more extensive state choreography remain later slices.
 
-
-## 0.5.6 — Voice Focus Mode (Windows user acceptance reported; release pending)
+## 0.5.6 — Voice Focus Mode (merged; Windows user acceptance reported)
 
 - Make the Voice page the opening view while keeping the actual Gemini/microphone
   session disconnected until explicitly connected. Hide dashboard sidebar, top
