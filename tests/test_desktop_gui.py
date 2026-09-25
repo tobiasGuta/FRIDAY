@@ -480,14 +480,14 @@ END:VCALENDAR
         window.close()
 
 
-def test_hybrid_shell_navigation_exposes_six_real_pages_without_starting_workers():
+def test_hybrid_shell_navigation_exposes_seven_real_pages_without_starting_workers():
     app = QApplication.instance() or QApplication([])
     window = DesktopWindow()
     try:
         assert app is not None
-        assert window.pages.count() == 6
+        assert window.pages.count() == 7
         assert tuple(window.nav_buttons) == (
-            "Home", "Voice", "Academic", "Reminders", "Calendar", "Settings"
+            "Home", "Voice", "Academic", "Reminders", "Calendar", "Projects", "Settings"
         )
         assert window.page_title.text() == "Voice"
         assert window.nav_buttons["Voice"].isChecked()
