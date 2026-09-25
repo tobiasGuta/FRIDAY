@@ -1367,7 +1367,7 @@ class DesktopWindow(QMainWindow):
             "Remove a discovered project to hide it; remove its discovery folder to "
             "stop scanning that location. Launching always requires confirmation."
         ))
-        layout.addWidget(self._heading("Authorized discovery folders"))
+        layout.addLayout(self._heading("Authorized discovery folders"))
         self.project_root_list = QListWidget()
         self.project_root_list.setMinimumHeight(75)
         layout.addWidget(self.project_root_list)
