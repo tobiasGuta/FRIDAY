@@ -66,7 +66,7 @@ wait for **Ready** before the next turn. Reminder drafts are on by default and w
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
 
-### Focus Voice Mode (v0.5.6; Windows visual/headset acceptance pending)
+### Focus Voice Mode (v0.5.6; Windows acceptance reported, release promotion pending)
 
 Opening the app shows the **Voice page** in a minimal near-black focus view:
 an enlarged locally painted amber orbital visualization, current state,
@@ -99,10 +99,13 @@ text. No new network access, persistent conversation memory, automatic
 microphone activation, implicit Google publishing, or additional API cost
 is introduced by panel navigation.
 
-The underlying v0.5.5 feature branch remains an unmerged draft; v0.5.6
-is a **stacked development branch**, not a replacement for main.
+The user-reported Windows acceptance, exact preserved source revisions,
+regression gates and safe rollback steps are recorded in
+[the accepted Focus baseline](docs/ACCEPTED_FOCUS_BASELINE.md). PR #9 and its
+stacked PR #10 remain unmerged drafts pending authorized release promotion.
+The earlier intermittent Gemini turn stall is not conclusively root-caused.
 
-### Hybrid desktop shell (v0.5.5 Slices 1–3; Windows Slice 3 acceptance pending)
+### Hybrid desktop shell (v0.5.5 Slices 1–3; Windows visual acceptance reported)
 
 FRIDAY now has a six-page PySide6 Widgets shell: **Home**, **Voice**,
 **Academic**, **Reminders**, **Calendar** and **Settings**. Navigation does not
