@@ -8,6 +8,7 @@ class EventKind(StrEnum):
     STATE = "state"
     TRANSCRIPT = "transcript"
     AUDIO = "audio"
+    GENERATION_COMPLETE = "generation_complete"
     TURN_COMPLETE = "turn_complete"
     INTERRUPTED = "interrupted"
     NOTICE = "notice"
