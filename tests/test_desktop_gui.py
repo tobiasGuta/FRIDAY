@@ -887,6 +887,7 @@ def test_focus_voice_transcript_remains_plain_and_user_controls_are_real():
     app = QApplication.instance() or QApplication([])
     window = DesktopWindow()
     try:
+        assert app is not None
         window.show()
         window._on_event("status", "Ready")
         assert window.focus_connect_button.text() == window.connect_button.text()
@@ -923,6 +924,7 @@ def test_focus_local_reminder_panel_does_not_run_worker(monkeypatch):
     app = QApplication.instance() or QApplication([])
     window = DesktopWindow()
     try:
+        assert app is not None
         monkeypatch.setattr(
             desktop, "read_pending_reminder_preview",
             lambda *, limit: (1, (("Study chapter", 1800000000.0),)),
