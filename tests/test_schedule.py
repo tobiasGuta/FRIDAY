@@ -10,6 +10,7 @@ from friday.schedule import (
     ScheduleStore,
     default_database_path,
     parse_due,
+    read_pending_reminder_preview,
     work_once,
 )
 from friday.ui.cli import build_parser, main
@@ -266,3 +267,18 @@ def test_gui_worker_can_stop_without_terminating_process(tmp_path):
     assert not thread.is_alive()
     assert errors == []
     assert not store.worker_health().running
+
+def test_home_preview_is_read_only_bounded_and_does_not_create_db(tmp_path):
+    path = tmp_path / "preview.sqlite3"
+    assert read_pending_reminder_preview(path=path, now=1000) == (0, ())
+    assert not path.exists()
+    store = ScheduleStore(path)
+    store.reminder("2026-10-01T15:00:00+00:00", "Review notes", now=1000)
+    store.reminder("2026-10-02T15:00:00+00:00", "Prepare quiz", now=1000)
+    store.timer(30, "Not a reminder", now=1000)
+    count, preview = read_pending_reminder_preview(path=path, limit=1, now=1000)
+    assert count == 2
+    assert preview == (("Review notes", datetime(2026, 10, 1, 15, tzinfo=UTC).timestamp()),)
+    assert read_pending_reminder_preview(path=path, now=9999999999) == (0, ())
+    with pytest.raises(ValueError):
+        read_pending_reminder_preview(path=path, limit=0)
