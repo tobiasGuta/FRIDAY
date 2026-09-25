@@ -386,6 +386,8 @@ def test_incomplete_generation_is_diagnosed_without_false_turn_completion(monkey
             "generation_complete=True" in str(value)
             and "turn_complete=False" in str(value)
             and "assistant_text=True" in str(value)
+            and "audio_received=False" in str(value)
+            and "audio_callback=False" in str(value)
             for value in notices
         )
         assert any("Final turn completion was not received" in str(value)
