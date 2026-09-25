@@ -152,6 +152,24 @@
 - Offline CI, then Windows layout/headset/tray/credential acceptance are
   required before merging this UI milestone.
 
+## v0.5.6 — Focus Voice Mode (stacked draft)
+
+- An orb-first Voice page with normal-window near-black canvas, amber
+  state-driven Qt rendering, optional concise subtitles and canonical mic and
+  approval controls. Sidebar, full transcript and dashboard cards stay hidden
+  until the user requests them.
+- Allowlisted successful read-only academic/reminder tool events produce typed
+  UI presentation hints; exact local show/hide phrases and visible panel menu
+  also work. No transcript keyword scanning for permission changes.
+- Academic/reminder drawer uses bounded local data. Calendar drawer shows
+  worker and optional Google sync status only, not unrelated event lists.
+- Preserve manual Connect/Stop, explicit reconnect, no persistent chat memory,
+  no extra Gemini sessions for UI changes, read-only Brightspace and original
+  scheduler/tray ownership. No transparent overlay or QML rewrite in scope.
+- Offline Windows/Ubuntu CI first, then manual Windows voice/approval,
+  narrow-window, hidden/tray and privacy acceptance. PR #9 remains the
+  v0.5.5 prerequisite; this work uses a separate stacked draft PR.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.
