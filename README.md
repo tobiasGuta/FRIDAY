@@ -109,6 +109,24 @@ advanced motion/compact floating mode and full appearance options remain
 subsequent slices. Mockup-only courses, actions and information must **not**
 be mistaken for implemented data or features.
 
+### Voice turn-end diagnostics (v0.5.5 draft)
+
+If FRIDAY says `Voice response stalled for 30 seconds` after it already
+spoke, the current voice worker is still waiting for a final Live API
+`turn_complete` signal. This is an existing safety gate, not a Voice
+page animation timeout. The draft diagnostic emits one safe summary on
+failure with four booleans:
+`generation_complete`, `turn_complete`, `assistant_text`, and
+`audio_received`. No speech content, PCM, raw provider messages,
+credentials, or subscription URLs are included. The session still closes
+safely and requires an **explicit** reconnect; do not treat
+`generation_complete` as final turn completion or auto-reconnect.
+
+To troubleshoot, keep a short session with web search off and compare
+the diagnostic line. Do not upload API keys, `.env`, audio recordings,
+or raw Gemini debug payloads. Full hardware acceptance and any
+protocol-level correction require evidence of which marker is missing.
+
 ### Brightspace calendar (introduced in v0.5.4; Windows feed accepted)
 
 The optional `brightspace` extra provides iCalendar parsing, HTTPS retrieval
