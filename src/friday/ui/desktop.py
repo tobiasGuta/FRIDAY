@@ -405,6 +405,8 @@ class DesktopWindow(QMainWindow):
         self._state = "Disconnected"
         self._last_recovery: str | None = None
         self._draft: dict[str, str] | None = None
+        self._voice_panel: str | None = None
+        self._focus_subtitle_speaker: str | None = None
         self.setWindowTitle(f"FRIDAY · v{__version__}")
         self.resize(1270, 830)
         self.setMinimumSize(900, 650)
@@ -482,6 +484,7 @@ class DesktopWindow(QMainWindow):
         sidebar_note.setObjectName("subheading")
         sidebar_note.setWordWrap(True)
         nav.addWidget(sidebar_note)
+        self.sidebar = sidebar
         shell.addWidget(sidebar)
 
         main = QWidget()
@@ -512,6 +515,7 @@ class DesktopWindow(QMainWindow):
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self._connect_or_disconnect)
         bar.addWidget(self.connect_button)
+        self.top_bar = top
         content.addWidget(top)
         self.page_subtitle = QLabel(self._page_subtitles["Home"])
         self.page_subtitle.setObjectName("subheading")
@@ -527,7 +531,7 @@ class DesktopWindow(QMainWindow):
         self._build_reminders_page()
         self._build_calendar_page()
         self._build_settings_page()
-        self._navigate("Home")
+        self._navigate("Voice")
         self._update_local_clock()
 
     def _new_page(self) -> QVBoxLayout:
