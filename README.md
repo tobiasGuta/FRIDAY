@@ -1,5 +1,7 @@
 # FRIDAY
 
+**Experimental v0.5.7 Hologram Lab, Slice 1:** Optional Qt-painted orbital/core rendering; the accepted v0.5.6 Classic orb remains the default. No voice, model, network, reminder or approval behavior changes.
+
 A harness-first personal AI assistant. **v0.5.6 Focus Voice is merged into main, following v0.5.5 hybrid dashboard. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
@@ -65,6 +67,26 @@ until you click **Connect**. Use **Start talking**, speak, then **Stop recording
 wait for **Ready** before the next turn. Reminder drafts are on by default and web
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
+
+### Hologram Lab (v0.5.7 Slice 1, experimental)
+
+In Focus Voice Mode, open **Panels → Experimental orbital hologram · Slice 1**
+to toggle the new visual renderer. Uncheck it to return immediately to the
+accepted **Classic** orb. The choice is deliberately **window-only** and resets
+to Classic after relaunch: experiments cannot silently replace the stable look.
+
+Slice 1 draws three independently moving elliptical orbital planes, restrained
+circuit ticks and a layered breathing amber core using Qt QPainter. The
+rendering responds only to the actual connection/Ready/Listening/Responding
+state, **not** microphone volume or generated audio. An idle experimental orb
+animates gently only while visible; disconnected or hidden views do not
+advance. Particles, shaders, 3D, desktop overlays and true audio-reactive
+visualization are *not* part of this slice. It adds no API calls or dependencies.
+
+To validate, run the offline tests first, then test switching between the
+two orb renderers during an ordinary Windows session. Verify manual Connect,
+Start/Stop, Brightspace context, reminder Confirm/Cancel, web-search opt-in,
+and tray/quit as before. Keep PR #10's accepted release baseline intact.
 
 ### Focus Voice Mode (v0.5.6; Windows acceptance reported)
 

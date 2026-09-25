@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.7 — Hologram Lab, Slice 1 (experimental; Windows acceptance pending)
+
+- Add optional multi-plane amber orbital renderer with an animated energy core,
+  existing state-driven animation and restrained outer circuit ticks.
+- Keep the accepted v0.5.6 Classic QPainter hologram implementation unchanged
+  and selected by default. A checked item in Focus Panels swaps renderers
+  locally; on restart the choice safely returns to Classic.
+- Keep the animation idle when hidden or disconnected. No microphone amplitude,
+  real audio waveform, QML/GL shaders, new API calls, or persistent preference.
+- Include Qt rendering tests and fake/no-worker UI regressions. Tiny orbiting
+  particles and more extensive state choreography remain later slices.
+
 ## 0.5.6 — Voice Focus Mode (merged; Windows user acceptance reported)
 
 - Make the Voice page the opening view while keeping the actual Gemini/microphone
