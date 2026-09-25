@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.5 — Hybrid desktop shell (Slice 1; Windows visual acceptance pending)
+
+- Introduce six navigable PySide6 Widgets pages: Home, Voice, Academic,
+  Reminders, Calendar, Settings, with a new dark dashboard style and live
+  session/scheduler/Brightspace status bar.
+- Reuse one canonical copy of existing voice, reminder approval, Brightspace,
+  and scheduler controls; a reminder draft routes to the Voice page instead
+  of generating an unapproved parallel workflow.
+- Mirror local cached coursework and current-session transcript on Home
+  without retrieving Brightspace at startup, storing conversation history,
+  or starting a microphone / Gemini session.
+- Preserve protected feed credential storage, read-only calendar semantics,
+  opt-in Google publishing, local scheduler ownership, and quit/tray lifecycle.
+- Add headless navigation, approval, offline cache, state-mirroring, and
+  plain-text regression tests. Cinematic animation, course identification,
+  calendar grid, and floating mini-mode remain subsequent UI slices.
+
+
 ## 0.5.4 — Brightspace calendar intelligence (Windows live-feed acceptance pending)
 
 - Add a strictly read-only CUNY Brightspace iCalendar connector. An explicit
