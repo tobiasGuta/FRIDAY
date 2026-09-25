@@ -170,8 +170,8 @@
   working Windows focus view, Brightspace drawer and multi-turn conversation.
   Additional long-run stability and individual reminder/scheduler checks remain
   separate regression gates. The exact source and rollback are recorded in
-  `docs/ACCEPTED_FOCUS_BASELINE.md`. PR #9 remains the v0.5.5 prerequisite;
-  PR #10 remains a stacked draft until authorized review/merge.
+  `docs/ACCEPTED_FOCUS_BASELINE.md`. PR #9 was merged into `main`;
+  PR #10 now targets `main` and awaits release authorization.
 
 ## Later
 
