@@ -351,3 +351,81 @@ def test_desktop_session_rejects_unbounded_duration():
                 FakeMicrophone(), FakeSpeaker(), approval=None,
                 emit=lambda *_: None, max_seconds=invalid,
             )
+
+
+def test_incomplete_generation_is_diagnosed_without_false_turn_completion(monkeypatch):
+    from friday.ui import desktop_session
+
+    class NoFinalTurnProvider(FakeAudioProvider):
+        async def end_activity(self):
+            await self.events_queue.put(
+                VoiceEvent(EventKind.TRANSCRIPT, text="I'm here.", speaker="assistant")
+            )
+            await self.events_queue.put(VoiceEvent(EventKind.GENERATION_COMPLETE))
+            # Deliberately no TURN_COMPLETE, as in the suspected live failure.
+
+    async def scenario():
+        monkeypatch.setattr(desktop_session, "VOICE_STALL_SECONDS", 0.06)
+        provider = NoFinalTurnProvider()
+        mic = FakeMicrophone()
+        speaker = FakeSpeaker()
+        events = []
+        controller = DesktopVoiceSession(
+            SessionManager(provider), mic, speaker, approval=None,
+            emit=lambda kind, value: events.append((kind, value)), max_seconds=30,
+        )
+        runner = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        controller.request("start")
+        await _wait_for(events, "status", "Listening")
+        controller.request("stop")
+        await _wait_for(events, "status", "Responding")
+        await asyncio.wait_for(runner, timeout=2)
+        notices = [value for kind, value in events if kind == "notice"]
+        assert any(
+            "generation_complete=True" in str(value)
+            and "turn_complete=False" in str(value)
+            and "assistant_text=True" in str(value)
+            for value in notices
+        )
+        assert any("Final turn completion was not received" in str(value)
+                   for kind, value in events if kind == "error")
+        assert ("recovery", "connection") in events
+        assert ("status", "Ready") not in events[events.index(("status", "Responding")) + 1:]
+        assert provider.closed and speaker.closed and not mic.recording
+        assert controller.completions == 0
+        assert controller.generation_completions == 1
+
+    asyncio.run(scenario())
+
+
+def test_real_turn_complete_releases_microphone_after_generation_marker():
+    class CompleteProvider(FakeAudioProvider):
+        async def end_activity(self):
+            await self.events_queue.put(VoiceEvent(EventKind.GENERATION_COMPLETE))
+            await self.events_queue.put(VoiceEvent(EventKind.TURN_COMPLETE))
+
+    async def scenario():
+        events = []
+        provider = CompleteProvider()
+        controller = DesktopVoiceSession(
+            SessionManager(provider), FakeMicrophone(), FakeSpeaker(),
+            approval=None, emit=lambda kind, value: events.append((kind, value)),
+            max_seconds=30,
+        )
+        runner = asyncio.create_task(controller.run())
+        await _wait_for(events, "status", "Ready")
+        controller.request("start")
+        await _wait_for(events, "status", "Listening")
+        controller.request("stop")
+        await _wait_for(events, "status", "Responding")
+        async with asyncio.timeout(2):
+            while events.count(("status", "Ready")) < 2:
+                await asyncio.sleep(0.005)
+        assert controller.completions == 1
+        assert controller.generation_completions == 1
+        assert not any("turn-end diagnostics" in str(value) for _, value in events)
+        controller.request("quit")
+        await asyncio.wait_for(runner, 2)
+
+    asyncio.run(scenario())
