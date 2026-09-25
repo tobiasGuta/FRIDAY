@@ -1,6 +1,6 @@
 # FRIDAY
 
-A harness-first personal AI assistant. **v0.5.6 is a draft Focus Voice UI stacked on the v0.5.5 hybrid dashboard. The working v0.5.4 functionality remains intact.**
+A harness-first personal AI assistant. **v0.5.6 Focus Voice is under release review; v0.5.5 hybrid dashboard is merged. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
 No distribution license has been selected yet. Repository visibility is not a grant of reuse rights.
 
@@ -101,9 +101,10 @@ is introduced by panel navigation.
 
 The user-reported Windows acceptance, exact preserved source revisions,
 regression gates and safe rollback steps are recorded in
-[the accepted Focus baseline](docs/ACCEPTED_FOCUS_BASELINE.md). PR #9 and its
-stacked PR #10 remain unmerged drafts pending authorized release promotion.
-The earlier intermittent Gemini turn stall is not conclusively root-caused.
+[the accepted Focus baseline](docs/ACCEPTED_FOCUS_BASELINE.md). PR #9 is
+merged into `main`; PR #10 now targets `main` and remains under release
+review. The earlier intermittent Gemini turn stall is not conclusively
+root-caused.
 
 ### Hybrid desktop shell (v0.5.5 Slices 1–3; Windows visual acceptance reported)
 
