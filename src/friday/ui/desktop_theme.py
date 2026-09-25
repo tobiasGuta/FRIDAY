@@ -35,9 +35,53 @@ QLabel#eyebrow {
 QLabel#itemTitle { color: #F3F9FF; font-size: 14px; font-weight: bold; }
 QLabel#summaryBadge { color: #9EDACC; font-size: 11px; font-weight: bold; }
 QFrame#voiceStage {
-    background-color: #102443; border: 1px solid #305A8B;
-    border-radius: 22px;
+    background-color: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                                      stop:0 #0D223E,stop:0.55 #15385D,
+                                      stop:1 #0B1E37);
+    border: 1px solid #376DA5; border-radius: 23px;
 }
+QFrame#voiceRibbon {
+    background-color: #11243C; border: 1px solid #315479;
+    border-radius: 13px;
+}
+QLabel#voiceHeadline {
+    color: #F3FAFF; font-size: 23px; font-weight: bold;
+}
+QLabel#voiceActivity {
+    color: #9BC2E4; font-size: 12px;
+}
+QLabel#voiceStateBadge {
+    background-color: #29384E; border: 1px solid #476383;
+    border-radius: 10px; padding: 7px 12px;
+    color: #DCE9F6; font-weight: bold;
+}
+QLabel#voiceStateBadge[phase="Ready"] {
+    background-color: #173950; color: #A7E8FF; border-color: #3B8AA8;
+}
+QLabel#voiceStateBadge[phase="Listening"] {
+    background-color: #164A45; color: #A7FFE2; border-color: #3AA88E;
+}
+QLabel#voiceStateBadge[phase="Responding"] {
+    background-color: #40365C; color: #E1D3FF; border-color: #8B79BE;
+}
+QScrollArea#bubbleViewport, QWidget#bubbleCanvas {
+    background-color: #0B192C; border: 1px solid #284665;
+    border-radius: 12px;
+}
+QFrame#userBubble {
+    background-color: #1D426A; border: 1px solid #497FB2;
+    border-radius: 13px;
+}
+QFrame#assistantBubble {
+    background-color: #182E4A; border: 1px solid #365B82;
+    border-radius: 13px;
+}
+QFrame#systemBubble {
+    background-color: #1A283A; border: 1px solid #40546A;
+    border-radius: 11px;
+}
+QLabel#bubbleRole { color: #88D0E9; font-size: 11px; font-weight: bold; }
+QLabel#bubbleText { color: #F3F9FF; font-size: 13px; }
 QFrame#approval {
     background-color: #30243F; border: 1px solid #8974B8;
     border-radius: 14px;
