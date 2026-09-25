@@ -743,6 +743,9 @@ def test_cinematic_bubbles_are_plaintext_bounded_and_raw_transcript_retained():
     window = DesktopWindow()
     try:
         assert app is not None
+        window.show()
+        window._navigate("Voice")
+        app.processEvents()
         sample = '<img src="file:///private/image"> & literal text'
         window._on_event("transcript", {"speaker": "user", "text": sample})
         assert window._voice_bubble_entries[0][0] == "You"
@@ -777,6 +780,9 @@ def test_cinematic_context_is_local_and_stacks_when_narrow():
     window = DesktopWindow()
     try:
         assert app is not None
+        window.show()
+        window._navigate("Voice")
+        app.processEvents()
         window.home_academic_status.setText("Brightspace: cached · local snapshot")
         window.home_reminder_status.setText("2 pending reminders")
         window.home_scheduler_status.setText("Calendar: worker not running")
