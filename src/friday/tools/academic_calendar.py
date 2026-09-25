@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from friday.brightspace_calendar import (
@@ -28,10 +29,19 @@ def register_academic_calendar(
             return {"status": "error", "error": "academic_cache_unavailable"}
         if result.last_success is None:
             return {"status": "error", "error": "academic_calendar_not_synced"}
+        try:
+            # SQLite stores an unambiguous UTC instant; the voice tool must
+            # explicitly convert it to the user's computer timezone.
+            last_local = datetime.fromisoformat(result.last_success).astimezone()
+        except ValueError:
+            return {"status": "error", "error": "academic_cache_unavailable"}
         return {
             "status": "ok",
             "source": "CUNY Brightspace iCalendar (local read-only cache)",
-            "last_success": result.last_success,
+            "last_success_local": last_local.isoformat(timespec="seconds"),
+            "last_success_display": last_local.strftime(
+                "%B %d, %Y at %I:%M %p %Z (computer local time)"
+            ),
             "coverage": (
                 "Only items published to the calendar feed; not a complete assignment list."
             ),
