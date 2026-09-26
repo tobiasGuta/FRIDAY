@@ -55,7 +55,10 @@ def test_projects_page_can_discover_add_remove_and_launch_with_confirmation(
         window.project_list.setCurrentRow(0)
         monkeypatch.setattr(
             window._project_launcher, "launch",
-            lambda project_id, application: calls.append((project_id, application)),
+            lambda project_id, application: (
+                calls.append((project_id, application)) or
+                {"status": "launched", "project": "FreshProject", "application": application}
+            ),
         )
         window._launch_selected_project("vscode")
         assert not calls
