@@ -1,6 +1,6 @@
 # FRIDAY
 
-**Experimental v0.5.11 Summon Shortcut branch:** An opt-in Windows-wide key combination reveals FRIDAY without opening the microphone or a Gemini connection. Built on the Windows-accepted v0.5.10 workspace checkpoint; the accepted hologram is unchanged. This branch is not a released version.
+**Experimental v0.5.12 Daily Briefing branch:** An on-demand local today summary combines saved reminders with already-cached Brightspace calendar items. Built on the Windows-accepted v0.5.11 summon shortcut checkpoint; the accepted hologram is unchanged. This branch is not a released version.
 
 A harness-first personal AI assistant. **v0.5.6 Focus Voice is merged into main, following v0.5.5 hybrid dashboard. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
@@ -166,6 +166,33 @@ registration fails without overriding it; disable it or use the tray.
 Windows can refuse foreground activation under its normal focus restrictions.
 The Windows-wide hook is released on disable and explicit application exit,
 and is unavailable on Linux/macOS.
+
+### Today's briefing (v0.5.12, experimental)
+
+Go to **Dashboard → Home → Today's briefing** and click **Refresh
+briefing**. It reads only the existing local Brightspace SQLite cache and
+future pending reminders due later on the computer's local day. This is
+on-demand and works while disconnected; opening the page does not fetch
+anything, create a database or start Gemini. Academic rows differentiate
+actual VTODO DUE tasks, VEVENTs merely titled "- Due", and regular calendar
+events. Recurring calendar series are **not** expanded; an empty snapshot
+cannot establish that you have no assignments. The cached last-sync time
+and age warning appear when available. Read-only local reminders are
+bounded to five; calendar items to eight, with truncation indicators.
+
+Spoken briefing is **off by default**. To request it, check **Enable
+spoken daily briefing** on Home **before connecting or reconnecting**,
+then ask, "FRIDAY, what's on my agenda today?" or "Give me my daily
+briefing." The voice tool includes academic items only when the separate
+existing Academic voice checkbox is enabled; it includes reminders only
+when reminder voice controls are enabled. It does not silently override
+those permissions. Tool execution is read-only, off the Live event loop,
+and neither syncs Brightspace nor writes reminders. It does not query
+Google Calendar, grades, full assignment lists, projects, or the internet.
+
+The offline Home button and voice tool are separate, intentionally
+user-initiated paths. No daily push notification, background polling,
+new credentials, model session, or calendar event inference is added.
 
 ### Hologram Lab (v0.5.7 Slice 1 + optional Slice 2A, experimental)
 
