@@ -59,6 +59,7 @@ from friday.schedule import (
     read_worker_health,
 )
 from friday.tools.project_launcher import ProjectLauncher
+from friday.tools.project_status import ProjectGitStatus, ProjectStatusError
 from friday.tools.project_voice import ProjectLaunchProposals
 from friday.tools.projects import ProjectCatalog, ProjectError
 from friday.ui.brightspace_worker import AcademicSyncThread
@@ -305,6 +306,26 @@ class VoiceOrb(QWidget):
         painter.drawEllipse(center, 33, 33)
 
 
+class ProjectStatusThread(QThread):
+    """Run bounded, read-only Git inspection away from the Qt event loop."""
+
+    completed = Signal(object)
+
+    def __init__(self, service: ProjectGitStatus, project_id: str) -> None:
+        super().__init__()
+        self.service = service
+        self.project_id = project_id
+
+    def run(self) -> None:
+        try:
+            result = self.service.read(self.project_id)
+        except ProjectStatusError as exc:
+            result = {"status": "error", "error": exc.code}
+        except Exception:
+            result = {"status": "error", "error": "git_unavailable"}
+        self.completed.emit(result)
+
+
 class DesktopThread(QThread):
     """Isolate a complete asyncio session from the Qt main thread."""
 
@@ -437,6 +458,9 @@ class DesktopWindow(QMainWindow):
         super().__init__()
         self._projects = project_catalog if project_catalog is not None else ProjectCatalog()
         self._project_launcher = ProjectLauncher(self._projects)
+        self._project_status_service = ProjectGitStatus(self._projects)
+        self._project_status_thread: ProjectStatusThread | None = None
+        self._project_status_id: str | None = None
         self._input_device = input_device
         self._output_device = output_device
         self._input_language = input_language
@@ -1376,6 +1400,7 @@ class DesktopWindow(QMainWindow):
         layout.addWidget(self.project_voice_option)
         self.project_list = QListWidget()
         self.project_list.setMinimumHeight(220)
+        self.project_list.currentItemChanged.connect(self._project_selection_changed)
         layout.addWidget(self.project_list)
         buttons = QHBoxLayout()
         self.project_vscode_button = QPushButton("Open in VS Code")
@@ -1394,6 +1419,15 @@ class DesktopWindow(QMainWindow):
         ):
             buttons.addWidget(button)
         layout.addLayout(buttons)
+        status_actions = QHBoxLayout()
+        self.project_status_button = QPushButton("Check Git Status")
+        self.project_status_button.clicked.connect(self._check_project_status)
+        status_actions.addWidget(self.project_status_button)
+        self.project_status_detail = self._plain_label(
+            "Select a project, then check its local Git status. No files are changed."
+        )
+        status_actions.addWidget(self.project_status_detail, 1)
+        layout.addLayout(status_actions)
         manager = QHBoxLayout()
         self.project_add_button = QPushButton("Add Project")
         self.project_add_button.clicked.connect(self._add_project)
@@ -1456,6 +1490,74 @@ class DesktopWindow(QMainWindow):
     def _selected_project_id(self) -> str | None:
         item = self.project_list.currentItem()
         return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
+
+    def _project_selection_changed(self, _current: object, _previous: object) -> None:
+        self.project_status_detail.setText(
+            "Select a project, then check its local Git status. No files are changed."
+        )
+
+    def _check_project_status(self) -> None:
+        if self._project_status_thread is not None or self._quitting or self._closing:
+            return
+        project_id = self._selected_project_id()
+        if project_id is None:
+            self.project_status_detail.setText("Select a project first.")
+            return
+        thread = ProjectStatusThread(self._project_status_service, project_id)
+        self._project_status_id = project_id
+        self._project_status_thread = thread
+        self.project_status_button.setEnabled(False)
+        self.project_status_detail.setText("Checking local Git status…")
+        thread.completed.connect(self._display_project_status)
+        thread.finished.connect(self._project_status_finished)
+        thread.start()
+
+    def _display_project_status(self, result: dict) -> None:
+        if self._quitting or self._closing or (
+            self._selected_project_id() != self._project_status_id
+        ):
+            return
+        if result.get("status") != "ok":
+            error = result.get("error")
+            explanations = {
+                "git_unavailable": "Git is not installed or unavailable.",
+                "git_unavailable_or_not_repository": "This folder is not a Git repository.",
+                "not_repository_root": "Select the Git repository root, not a nested folder.",
+                "git_timeout": "Git status timed out; try again.",
+                "git_output_too_large": "Git status is too large for this summary.",
+                "git_invalid_output": "Git returned an unexpected status format.",
+                "unknown_project": "This project is no longer available; refresh Projects.",
+            }
+            self.project_status_detail.setText(
+                explanations.get(error, "Local Git status is unavailable.")
+            )
+            return
+        counts = (
+            f"Staged: {result['staged']} · Modified: {result['modified']} · "
+            f"Untracked entries: {result['untracked']}"
+        )
+        commit = (
+            f"Latest: {result['last_commit']} — {result['last_subject']}"
+            if result["last_commit"] else "No commits yet."
+        )
+        self.project_status_detail.setText(
+            f"{result['project']} · Branch: {result['branch']} · "
+            f"{'Clean' if result['clean'] else counts}\\n{commit}"
+        )
+
+    def _project_status_finished(self) -> None:
+        if self._project_status_thread is not None:
+            self._project_status_thread.deleteLater()
+            self._project_status_thread = None
+        self._project_status_id = None
+        self.project_status_button.setEnabled(not self._quitting and not self._closing)
+        if self._quitting:
+            self._finish_quit()
+        elif self._closing and (
+            self._worker is None and self._scheduler is None
+            and self._academic_sync is None
+        ):
+            self.close()
 
     def _add_project(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select a project folder")
@@ -1715,7 +1817,7 @@ class DesktopWindow(QMainWindow):
     def _finish_quit(self) -> None:
         if (
             self._worker is not None or self._scheduler is not None
-            or self._academic_sync is not None
+            or self._academic_sync is not None or self._project_status_thread is not None
         ):
             return
         self._health_timer.stop()
@@ -2283,7 +2385,7 @@ class DesktopWindow(QMainWindow):
             return
         if (
             self._worker is not None or self._scheduler is not None
-            or self._academic_sync is not None
+            or self._academic_sync is not None or self._project_status_thread is not None
         ):
             self._closing = True
             if self._worker is not None:
