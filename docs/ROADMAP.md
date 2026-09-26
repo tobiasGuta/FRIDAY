@@ -228,6 +228,16 @@
 - Next independent slices: existing-data daily briefing (#4), read-only GitHub
   PR/CI status (#5). No favorites/recent-project history.
 
+## v0.5.12 — Today's Briefing (experimental branch)
+
+- User-initiated local summary: published calendar entries for today plus
+  saved pending reminders due later today. No new sync, writes or auto-trigger.
+- Separate opt-in voice tool respects existing Academic/Reminder voice
+  permissions. Missing/stale/incomplete sources and recurrence caveats explicit.
+- Offline CI then real Windows Home and voice acceptance before merge/release.
+- Remaining user-selected milestone #5: separately scoped read-only GitHub
+  PR and workflow status. No favorites/recent-project history.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.
