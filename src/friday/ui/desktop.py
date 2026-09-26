@@ -1419,6 +1419,13 @@ class DesktopWindow(QMainWindow):
         ):
             buttons.addWidget(button)
         layout.addLayout(buttons)
+        self.project_workspace_button = QPushButton(
+            "Open Development Workspace · VS Code + Terminal"
+        )
+        self.project_workspace_button.clicked.connect(
+            lambda: self._launch_selected_project("workspace")
+        )
+        layout.addWidget(self.project_workspace_button)
         status_actions = QHBoxLayout()
         self.project_status_button = QPushButton("Check Git Status")
         self.project_status_button.clicked.connect(self._check_project_status)
@@ -1626,16 +1633,30 @@ class DesktopWindow(QMainWindow):
             return
         try:
             project = self._projects.find(project_id)
-            target = "VS Code" if application == "vscode" else "Windows Terminal"
+            targets = {
+                "vscode": "VS Code",
+                "terminal": "Windows Terminal",
+                "workspace": "VS Code and Windows Terminal",
+            }
+            target = targets.get(application)
+            if target is None:
+                return
             if QMessageBox.question(
                 self, "Open project",
-                f"Open {project.name} in {target}?\n{project.path}",
+                f"Open {project.name} in {target}?\n{project.path}\n"
+                "One confirmation; no terminal commands will run.",
             ) != QMessageBox.StandardButton.Yes:
                 return
-            self._project_launcher.launch(project_id, application)
-            self.projects_notice.setText(
-                f"Sent {project.name} to {target}; application startup is not verified."
-            )
+            result = self._project_launcher.launch(project_id, application)
+            if result["status"] == "partial":
+                self.projects_notice.setText(
+                    f"Sent {project.name} to VS Code, but Windows Terminal did not start. "
+                    "No automatic retry; check Terminal manually."
+                )
+            else:
+                self.projects_notice.setText(
+                    f"Sent {project.name} to {target}; application startup is not verified."
+                )
         except ProjectError as exc:
             self.projects_notice.setText(str(exc))
 
@@ -2267,7 +2288,12 @@ class DesktopWindow(QMainWindow):
         self._project_draft = draft
         self.project_approval_panel.setVisible(draft is not None)
         if draft is not None:
-            target = "VS Code" if draft["application"] == "vscode" else "Windows Terminal"
+            targets = {
+                "vscode": "VS Code",
+                "terminal": "Windows Terminal",
+                "workspace": "VS Code + Windows Terminal",
+            }
+            target = targets.get(draft["application"], "Unknown target")
             self.project_draft_description.setText(
                 f'{draft["name"]} → {target}\n{draft["path"]}\n'
                 "Nothing opens until you click Open Project."
@@ -2320,6 +2346,12 @@ class DesktopWindow(QMainWindow):
                     "Confirmed",
                     f"Sent {value['project']} to {value['application']}; "
                     "application startup is not verified.",
+                )
+            elif status == "partial":
+                self._append(
+                    "System",
+                    f"Sent {value['project']} to VS Code, but Terminal did not start. "
+                    "No automatic retry was attempted.",
                 )
             elif status == "rejected":
                 self._append("Confirmed", "Project launch cancelled.")
