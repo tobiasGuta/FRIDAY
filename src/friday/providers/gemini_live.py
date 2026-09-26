@@ -16,12 +16,12 @@ from friday.tools.daily_briefing import (
 )
 from friday.tools.github_status import PublicGitHubStatus
 from friday.tools.github_voice import GITHUB_STATUS_TOOL, register_public_github_status
-from friday.tools.projects import ProjectCatalog
 from friday.tools.project_voice import (
     GET_PROJECT_STATUS_TOOL,
     ProjectLaunchProposals,
     register_project_tools,
 )
+from friday.tools.projects import ProjectCatalog
 from friday.tools.search_grounding import extract_search_grounding
 from friday.tools.weather import WEATHER_TOOL_NAME
 from friday.tools.web_search import SEARCH_TOOL_NAME, WebSearchService, register_web_search
