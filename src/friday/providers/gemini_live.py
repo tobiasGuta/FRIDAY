@@ -353,7 +353,9 @@ class GeminiLiveProvider:
                                         name,
                                         getattr(call, "args", None),
                                     ),
-                                    timeout=15.0,
+                                    timeout=(
+                                        15.0 if name == GET_PROJECT_STATUS_TOOL else 25.0
+                                    ),
                                 )
                             except TimeoutError:
                                 result = {
