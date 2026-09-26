@@ -212,3 +212,79 @@ def test_git_status_errors_do_not_claim_a_repository_exists(tmp_path):
     finally:
         window._tray = None
         window.close()
+
+
+def test_workspace_button_one_confirmation_and_visible_partial_failure(monkeypatch, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    catalog = ProjectCatalog(tmp_path / "projects.json")
+    folder = tmp_path / "Workspace"
+    folder.mkdir()
+    project = catalog.add_project(folder)
+    window = DesktopWindow(project_catalog=catalog)
+    calls = []
+    decisions = []
+
+    def ask(*args, **kwargs):
+        decisions.append(args[2])
+        return QMessageBox.StandardButton.No if len(decisions) == 1 else (
+            QMessageBox.StandardButton.Yes
+        )
+
+    monkeypatch.setattr(desktop.QMessageBox, "question", ask)
+    monkeypatch.setattr(
+        window._project_launcher, "launch",
+        lambda pid, target: (
+            calls.append((pid, target)) or {
+                "status": "partial", "project": project.name,
+                "application": target, "opened": "vscode", "failed": "terminal",
+            }
+        ),
+    )
+    try:
+        assert app is not None
+        window.project_list.setCurrentRow(0)
+        window.project_workspace_button.click()
+        assert len(decisions) == 1
+        assert calls == []
+        assert "VS Code and Windows Terminal" in decisions[0]
+        window.project_workspace_button.click()
+        assert len(decisions) == 2
+        assert calls == [(project.id, "workspace")]
+        assert "Terminal did not start" in window.projects_notice.text()
+        assert window._worker is None
+        assert window._scheduler is None
+    finally:
+        window._tray = None
+        window.close()
+
+
+def test_workspace_voice_card_identifies_both_targets_and_partial_result(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    catalog = ProjectCatalog(tmp_path / "projects.json")
+    folder = tmp_path / "workspace"
+    folder.mkdir()
+    project = catalog.add_project(folder)
+    window = DesktopWindow(project_catalog=catalog)
+    try:
+        assert app is not None
+        window.show()
+        app.processEvents()
+        window._on_event("status", "Ready")
+        window._on_event("project_draft", {
+            "id": project.id, "name": project.name,
+            "path": str(project.path), "application": "workspace",
+        })
+        assert window.project_approval_panel.isVisibleTo(window)
+        assert "VS Code + Windows Terminal" in window.project_draft_description.text()
+        assert window.project_approve_button.isEnabled()
+        assert window._worker is None
+        window._on_event("project_result", {
+            "status": "partial", "project": project.name,
+            "application": "workspace", "opened": "vscode", "failed": "terminal",
+        })
+        assert "Terminal did not start" in window.transcript.toPlainText()
+        window._on_event("project_draft", None)
+        assert not window.project_approval_panel.isVisibleTo(window)
+    finally:
+        window._tray = None
+        window.close()
