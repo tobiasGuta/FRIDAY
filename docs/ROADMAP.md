@@ -198,6 +198,16 @@
 - Offline tests and Windows/Ubuntu CI required; real Windows VS Code/Terminal
   and voice approvals require user acceptance before merge.
 
+## v0.5.9 — Project Status Intelligence (Slice 1, experimental)
+
+- Registered-project-only, bounded local Git summaries on the Projects page,
+  independent of Gemini and off the UI thread. Opt-in read-only voice status.
+- No filename/path/diff disclosure to the voice model, no Git writes/network,
+  and no inferred remote or CI state. Windows device acceptance required.
+- Follow-on, independent milestones: combined VS Code + Terminal workspace,
+  keyboard summon shortcut, existing-data daily briefing, and opt-in read-only
+  GitHub CI/PR status. No favorites or recent-project history.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.
