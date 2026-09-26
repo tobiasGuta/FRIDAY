@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from friday.tools.project_launcher import Application, ProjectLauncher
+from friday.tools.project_launcher import LaunchTarget, ProjectLauncher
 from friday.tools.project_status import ProjectGitStatus, ProjectStatusError
 from friday.tools.projects import ProjectCatalog, ProjectError
 from friday.tools.registry import ToolArguments, ToolRegistry, ToolSpec
@@ -29,7 +29,7 @@ class ListProjectsArguments(ToolArguments):
 
 class ProposeLaunchArguments(ToolArguments):
     project: str = Field(min_length=1, max_length=80)
-    application: Literal["vscode", "terminal"]
+    application: Literal["vscode", "terminal", "workspace"]
 
 
 class ProjectStatusArguments(ToolArguments):
@@ -41,7 +41,7 @@ class PendingProjectLaunch:
     project_id: str
     name: str
     path: str
-    application: Application
+    application: LaunchTarget
     created_at: float
 
 
@@ -165,8 +165,9 @@ def register_project_tools(
     registry.register(ToolSpec(
         name=PROPOSE_LAUNCH_TOOL,
         description=(
-            "Draft an opening request for an exactly registered project in VS Code "
-            "or Windows Terminal. No application is opened by this tool. "
+            "Draft an opening request for an exactly registered project in VS Code, "
+            "Windows Terminal, or workspace (both VS Code and Windows Terminal). "
+            "No application is opened by this tool. "
             "A separate human click in FRIDAY is mandatory."
         ),
         arguments=ProposeLaunchArguments,

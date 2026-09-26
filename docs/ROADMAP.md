@@ -208,6 +208,16 @@
   keyboard summon shortcut, existing-data daily briefing, and opt-in read-only
   GitHub CI/PR status. No favorites or recent-project history.
 
+## v0.5.10 — Combined Development Workspace (experimental branch)
+
+- One confirmed, exact registered-project request for both VS Code and
+  Windows Terminal; launcher preflights both and reports partial starts.
+- Offline Projects button and opt-in nonexecuting voice proposal; no commands,
+  project hardcoding, new credentials, new sessions or automatic retry.
+- Windows and Ubuntu CI, then real Windows acceptance before merge/release.
+- Next separate milestones: keyboard summon, existing-data daily briefing,
+  and opt-in read-only GitHub status. Favorites/recent history excluded.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

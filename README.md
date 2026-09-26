@@ -1,6 +1,6 @@
 # FRIDAY
 
-**Experimental v0.5.9 Project Status branch:** Local read-only Git status for registered projects, built on the Windows-accepted v0.5.8 launcher. The hologram and Classic fallback remain unchanged. This branch is not a released version.
+**Experimental v0.5.10 Combined Workspace branch:** One confirmed request opens a registered project in both VS Code and Windows Terminal. Built on the Windows-accepted v0.5.9 project-status checkpoint; no changes to the accepted hologram. This branch is not a released version.
 
 A harness-first personal AI assistant. **v0.5.6 Focus Voice is merged into main, following v0.5.5 hybrid dashboard. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
@@ -128,6 +128,26 @@ Example: "FRIDAY, what's the Git status of ParamIntel?" This reports local
 working-tree state only, **not** whether GitHub CI passed or the remote
 branch is up to date. Confirmation is still required for project launching,
 and the separate reminder approval remains unchanged.
+
+### Combined development workspace (v0.5.10, experimental)
+
+From the offline **Projects** page, select a registered project and click
+**Open Development Workspace · VS Code + Terminal**. A single confirmation
+authorizes two fixed-argument launches for that exact registered directory.
+Both application executables must be available before either is started.
+Terminal opens a tab in the project directory; **no shell commands are run**.
+
+To ask by voice, enable project voice requests before connecting and say
+"FRIDAY, open my development workspace for ParamIntel" or "Open Reconductor
+in VS Code and Windows Terminal." The model can only create a typed,
+nonexecuting `application=workspace` proposal. A separate visible
+**Open Project / Cancel** card is mandatory. Cancel or disconnect does
+not launch anything. There is no voice-only approval.
+
+Windows process-start requests do not prove the application finished loading.
+If Code starts but Terminal fails to start, FRIDAY reports a *partial*
+result, makes no automatic retry, and does not say both opened. Existing
+single-application buttons and the local Git status tool are unchanged.
 
 ### Hologram Lab (v0.5.7 Slice 1 + optional Slice 2A, experimental)
 

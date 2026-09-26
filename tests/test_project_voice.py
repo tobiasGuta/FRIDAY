@@ -197,3 +197,44 @@ def test_status_tool_disambiguates_without_guessing(tmp_path):
     result = registry.execute(GET_PROJECT_STATUS_TOOL, {"project": project.name})
     assert result == {"status": "error", "error": "ambiguous_project"}
     assert calls == []
+
+
+def test_workspace_voice_proposal_requires_one_separate_approval(tmp_path):
+    project, catalog, proposals, registry, calls = _ready(tmp_path)
+    assert registry.execute(PROPOSE_LAUNCH_TOOL, {
+        "project": project.id, "application": "workspace",
+    }) == {
+        "status": "ok", "state": "pending_approval",
+        "project": project.name, "application": "workspace",
+    }
+    assert proposals.display()["application"] == "workspace"
+    assert len(calls) == 0
+    assert registry.execute(PROPOSE_LAUNCH_TOOL, {
+        "project": project.id, "application": "workspace", "approved": True,
+    })["error"] == "invalid_arguments"
+    assert proposals.approve() == {
+        "status": "launched", "project": project.name, "application": "workspace",
+    }
+    assert len(calls) == 2
+    assert calls[0][0][1] == "--new-window"
+    assert calls[1][0][1:4] == ["-w", "0", "new-tab"]
+    assert all(kw["shell"] is False for _, kw in calls)
+    assert proposals.approve()["error"] == "no_pending_project"
+    assert len(calls) == 2
+
+
+def test_workspace_voice_cancel_and_missing_project_cannot_spawn(tmp_path):
+    project, catalog, proposals, registry, calls = _ready(tmp_path)
+    assert registry.execute(PROPOSE_LAUNCH_TOOL, {
+        "project": project.id, "application": "workspace",
+    })["state"] == "pending_approval"
+    assert proposals.reject()["status"] == "rejected"
+    assert proposals.approve()["error"] == "no_pending_project"
+    assert calls == []
+    assert registry.execute(PROPOSE_LAUNCH_TOOL, {
+        "project": "not registered", "application": "workspace",
+    })["error"] == "unknown_project"
+    assert registry.execute(PROPOSE_LAUNCH_TOOL, {
+        "project": project.id, "application": "workspace;calc.exe",
+    })["error"] == "invalid_arguments"
+    assert calls == []

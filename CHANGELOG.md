@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.10 — Combined Development Workspace (experimental; Windows acceptance pending)
+
+- Add an offline **Open Development Workspace** button for exact registered
+  projects; one host-owned confirmation opens VS Code and Windows Terminal.
+- Extend opt-in voice launch proposals with one typed `workspace` target
+  and the existing one-use approval card. No model-controlled commands.
+- Preflight both application executables before either launch; report partial
+  outcome if Terminal fails after VS Code starts, with no automatic retry.
+- Preserve the Windows-accepted v0.5.9 project status, v0.5.8 individual
+  launch buttons, and hologram checkpoint. No new dependencies or persistence.
+
+
 ## 0.5.9 — Project Status Intelligence, Slice 1 (experimental)
 
 - Add bounded local Git status inspection for registered repository roots:
