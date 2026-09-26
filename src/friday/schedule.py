@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
@@ -104,6 +104,42 @@ def read_pending_reminder_preview(
             f"SELECT text, due_at FROM schedules WHERE {where} "
             "ORDER BY due_at, id LIMIT ?",
             (current, limit),
+        ).fetchall()
+    return count, tuple((str(text), float(due_at)) for text, due_at in rows)
+
+
+def read_today_reminder_preview(
+    *, path: Path | None = None, limit: int = 5, now: float | None = None
+) -> tuple[int, tuple[tuple[str, float], ...]]:
+    """Read future pending reminders due on the computer's local calendar day.
+
+    Uses SQLite read-only URI; never initializes, migrates or writes the store.
+    The following local midnight is determined by the OS timezone rules, not
+    a fixed 24-hour increment (which is incorrect across DST transitions).
+    """
+    if type(limit) is not int or not 1 <= limit <= 5:
+        raise ValueError("Today preview limit must be 1–5")
+    database = default_database_path() if path is None else Path(path)
+    if not database.is_file():
+        return 0, ()
+    current = time.time() if now is None else now
+    day = datetime.fromtimestamp(current).date()
+    next_midnight = datetime.combine(day + timedelta(days=1), datetime.min.time())
+    end = next_midnight.timestamp()
+    with closing(
+        sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+    ) as db:
+        where = (
+            "kind = 'reminder' AND status = 'pending' "
+            "AND due_at > ? AND due_at < ?"
+        )
+        count = db.execute(
+            f"SELECT COUNT(*) FROM schedules WHERE {where}", (current, end)
+        ).fetchone()[0]
+        rows = db.execute(
+            f"SELECT text, due_at FROM schedules WHERE {where} "
+            "ORDER BY due_at, id LIMIT ?",
+            (current, end, limit),
         ).fetchall()
     return count, tuple((str(text), float(due_at)) for text, due_at in rows)
 
