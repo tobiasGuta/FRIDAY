@@ -140,3 +140,72 @@ def test_voice_proposal_is_visible_but_cannot_launch_without_host_click(tmp_path
         window._worker = None
         window._tray = None
         window.close()
+
+
+def test_local_git_status_button_runs_without_voice_or_application_launch(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    catalog = ProjectCatalog(tmp_path / "projects.json")
+    folder = tmp_path / "Code"
+    folder.mkdir()
+    project = catalog.add_project(folder)
+    window = DesktopWindow(project_catalog=catalog)
+
+    class FakeStatus:
+        def read(self, project_id):
+            assert project_id == project.id
+            return {
+                "status": "ok", "project": project.name, "branch": "main",
+                "staged": 1, "modified": 2, "untracked": 1,
+                "clean": False, "last_commit": "abcd123",
+                "last_subject": "Initial local commit", "last_at": None,
+            }
+
+    try:
+        assert app is not None
+        window._project_status_service = FakeStatus()
+        window._navigate("Projects")
+        window.project_list.setCurrentRow(0)
+        window._check_project_status()
+        worker = window._project_status_thread
+        assert worker is not None
+        assert worker.wait(2500)
+        for _ in range(5):
+            app.processEvents()
+        assert "Branch: main" in window.project_status_detail.text()
+        assert "Staged: 1" in window.project_status_detail.text()
+        assert "Initial local commit" in window.project_status_detail.text()
+        assert window._worker is None
+        assert window._scheduler is None
+        assert not window.orb._experimental
+    finally:
+        worker = window._project_status_thread
+        if worker is not None:
+            worker.wait(5000)
+            app.processEvents()
+        window._tray = None
+        window.close()
+
+
+def test_git_status_errors_do_not_claim_a_repository_exists(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    catalog = ProjectCatalog(tmp_path / "projects.json")
+    folder = tmp_path / "not a repo"
+    folder.mkdir()
+    project = catalog.add_project(folder)
+    window = DesktopWindow(project_catalog=catalog)
+    try:
+        assert app is not None
+        window.project_list.setCurrentRow(0)
+        window._project_status_id = project.id
+        window._display_project_status({
+            "status": "error", "error": "git_unavailable_or_not_repository",
+        })
+        assert "not a Git repository" in window.project_status_detail.text()
+        window._display_project_status({
+            "status": "error", "error": "not_repository_root",
+        })
+        assert "repository root" in window.project_status_detail.text()
+        assert window._worker is None
+    finally:
+        window._tray = None
+        window.close()

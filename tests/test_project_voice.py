@@ -9,6 +9,7 @@ from friday.providers.gemini_live import (
 )
 from friday.tools.project_launcher import ProjectLauncher
 from friday.tools.project_voice import (
+    GET_PROJECT_STATUS_TOOL,
     LIST_PROJECTS_TOOL,
     PROPOSE_LAUNCH_TOOL,
     ProjectLaunchProposals,
@@ -39,7 +40,7 @@ def _ready(tmp_path):
 def test_read_only_project_listing_does_not_reveal_paths(tmp_path):
     project, catalog, proposals, registry, calls = _ready(tmp_path)
     names = {item["name"] for item in registry.declarations()}
-    assert names == {LIST_PROJECTS_TOOL, PROPOSE_LAUNCH_TOOL}
+    assert names == {LIST_PROJECTS_TOOL, GET_PROJECT_STATUS_TOOL, PROPOSE_LAUNCH_TOOL}
     listing = registry.execute(LIST_PROJECTS_TOOL, {"query": "new"})
     assert listing == {
         "status": "ok", "projects": [{"id": project.id, "name": "New Project"}],
@@ -117,7 +118,7 @@ def test_project_tools_are_disabled_in_default_voice_provider(tmp_path):
     enabled = GeminiLiveProvider(
         settings, enable_local_clock=True, project_proposals=proposals,
     )
-    assert {LIST_PROJECTS_TOOL, PROPOSE_LAUNCH_TOOL}.issubset({
+    assert {LIST_PROJECTS_TOOL, GET_PROJECT_STATUS_TOOL, PROPOSE_LAUNCH_TOOL}.issubset({
         t["name"] for t in enabled._tool_registry.declarations()
     })
     assert calls == []
@@ -141,9 +142,58 @@ def test_voice_instruction_matches_opt_in_project_capability():
     assert "cannot control the computer" not in FRIDAY_INSTRUCTION
     assert "cannot execute arbitrary computer or shell actions" in FRIDAY_INSTRUCTION
     assert "list_local_projects" in PROJECT_INSTRUCTION
+    assert "get_local_project_status" in PROJECT_INSTRUCTION
     assert "propose_project_launch" in PROJECT_INSTRUCTION
     assert "Open Project" in PROJECT_INSTRUCTION
     assert "proposing never executes" in PROJECT_INSTRUCTION
     assert "disable" in PROJECT_DISABLED_INSTRUCTION
     assert "disconnect and reconnect" in PROJECT_DISABLED_INSTRUCTION
     assert "Do not claim an attempted or failed launch" in PROJECT_DISABLED_INSTRUCTION
+
+
+def test_git_status_tool_does_not_expose_path_subject_or_execute_launch(tmp_path):
+    project, catalog, proposals, registry, calls = _ready(tmp_path)
+
+    class FakeStatus:
+        def __init__(self):
+            self.ids = []
+
+        def read(self, project_id):
+            self.ids.append(project_id)
+            return {
+                "status": "ok", "project": "New Project", "branch": "main",
+                "staged": 1, "modified": 2, "untracked": 1, "clean": False,
+                "last_commit": "abc1234", "last_at": "2026-09-25T12:00:00-04:00",
+                "last_subject": "Never send this private subject",
+            }
+
+    service = FakeStatus()
+    proposals.status_service = service
+    result = registry.execute(GET_PROJECT_STATUS_TOOL, {"project": project.id})
+    assert result["status"] == "ok"
+    assert result["staged"] == 1
+    assert result["modified"] == 2
+    assert result["untracked"] == 1
+    assert result["last_commit"] == "abc1234"
+    assert "last_subject" not in result
+    assert str(project.path) not in str(result)
+    assert service.ids == [project.id]
+    assert calls == []
+    assert proposals.pending() is None
+    assert registry.execute(GET_PROJECT_STATUS_TOOL, {
+        "project": project.id, "path": str(project.path),
+    })["error"] == "invalid_arguments"
+    assert registry.execute(GET_PROJECT_STATUS_TOOL, {
+        "project": "missing project",
+    })["error"] == "unknown_project"
+    assert service.ids == [project.id]
+
+
+def test_status_tool_disambiguates_without_guessing(tmp_path):
+    project, catalog, proposals, registry, calls = _ready(tmp_path)
+    other = tmp_path / "second"
+    other.mkdir()
+    catalog.add_project(other, project.name)
+    result = registry.execute(GET_PROJECT_STATUS_TOOL, {"project": project.name})
+    assert result == {"status": "error", "error": "ambiguous_project"}
+    assert calls == []

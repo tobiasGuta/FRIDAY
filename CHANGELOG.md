@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.9 — Project Status Intelligence, Slice 1 (experimental)
+
+- Add bounded local Git status inspection for registered repository roots:
+  branch, staged/modified/untracked entry counts and latest commit metadata.
+- Add an offline Projects-page button backed by a Qt worker; enable a
+  read-only voice status tool only alongside the existing opt-in project tools.
+  The voice tool omits local paths, filenames, commit subjects and diffs.
+- Disable external fsmonitor during the fixed-argument, no-shell Git checks;
+  no Git network, writes, arbitrary commands or background polling.
+- Preserve v0.5.8 voice launcher approvals and the accepted v0.5.7 hologram;
+  Windows functional acceptance is pending on this feature branch.
+
+
 ## 0.5.8 — Project Launcher (experimental branch; Windows acceptance pending)
 
 - Add an opt-in local catalog with manual folder picker and bounded one-level
