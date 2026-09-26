@@ -147,6 +147,7 @@ def test_hotkey_is_opt_in_summons_hidden_window_without_starting_voice(
         assert not window.mic_button.isEnabled()
         window._navigate("Settings")
         window.summon_hotkey_option.setChecked(True)
+        app.processEvents()
         fake = FakeHotkey.instances[-1]
         assert window._hotkey_thread is fake
         assert "active" in window.summon_hotkey_notice.text()
@@ -181,6 +182,7 @@ def test_unavailable_hotkey_disables_option_without_launch_or_retry(monkeypatch)
     try:
         assert app is not None
         window.summon_hotkey_option.setChecked(True)
+        app.processEvents()
         assert not window.summon_hotkey_option.isChecked()
         assert window._hotkey_thread is None
         assert "unavailable" in window.summon_hotkey_notice.text()
