@@ -144,16 +144,31 @@ def test_partial_lookup_does_not_claim_no_prs_or_workflow_success(registered):
 
     def getter(url):
         if "/pulls?" in url:
-            raise GitHubReadError("github_rate_limited_or_forbidden")
+            raise GitHubReadError("github_request_failed")
         return _fixtures(url)
 
     result = PublicGitHubStatus(catalog, getter=getter).read(project.id)
     assert result["status"] == "partial"
     assert result["pulls"] == {
-        "state": "error", "error": "github_rate_limited_or_forbidden", "items": [],
+        "state": "error", "error": "github_request_failed", "items": [],
     }
     assert result["workflows"]["items"][0]["conclusion"] is None
     assert result["workflows"]["items"][1]["branch"] == "main"
+
+
+def test_rate_limit_short_circuits_second_request(registered):
+    root, catalog, project = registered
+    calls = []
+
+    def getter(url):
+        calls.append(url)
+        raise GitHubReadError("github_rate_limited_or_forbidden")
+
+    result = PublicGitHubStatus(catalog, getter=getter).read(project.id)
+    assert result["status"] == "error"
+    assert len(calls) == 1
+    assert result["pulls"]["error"] == "github_rate_limited_or_forbidden"
+    assert result["workflows"]["error"] == "github_rate_limited_or_forbidden"
 
 
 def test_all_failure_is_error_and_never_auto_retries(registered):
