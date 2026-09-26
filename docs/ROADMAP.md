@@ -218,6 +218,16 @@
 - Next separate milestones: keyboard summon, existing-data daily briefing,
   and opt-in read-only GitHub status. Favorites/recent history excluded.
 
+## v0.5.11 — Summon Shortcut (experimental branch)
+
+- Optional Windows-wide Ctrl+Alt+Shift+F to reveal the already-running
+  FRIDAY window. No automatic audio capture, Gemini connection or login startup.
+- Registered only on explicit Settings enable, released on disable/exit;
+  nonfatal collision and Windows focus restrictions, existing tray fallback.
+- Full offline CI, then Windows foreground/hidden/tray/conflict/exit acceptance.
+- Next independent slices: existing-data daily briefing (#4), read-only GitHub
+  PR/CI status (#5). No favorites/recent-project history.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.
