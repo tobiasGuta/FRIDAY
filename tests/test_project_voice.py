@@ -1,7 +1,12 @@
 """Model can draft a project launch, never directly execute it."""
 
 from friday.config import Settings
-from friday.providers.gemini_live import GeminiLiveProvider
+from friday.providers.gemini_live import (
+    FRIDAY_INSTRUCTION,
+    PROJECT_DISABLED_INSTRUCTION,
+    PROJECT_INSTRUCTION,
+    GeminiLiveProvider,
+)
 from friday.tools.project_launcher import ProjectLauncher
 from friday.tools.project_voice import (
     LIST_PROJECTS_TOOL,
@@ -130,3 +135,15 @@ def test_expired_proposal_cannot_be_approved(tmp_path, monkeypatch):
     clock[0] += 301.0
     assert proposals.approve()["error"] == "no_pending_project"
     assert calls == []
+
+
+def test_voice_instruction_matches_opt_in_project_capability():
+    assert "cannot control the computer" not in FRIDAY_INSTRUCTION
+    assert "cannot execute arbitrary computer or shell actions" in FRIDAY_INSTRUCTION
+    assert "list_local_projects" in PROJECT_INSTRUCTION
+    assert "propose_project_launch" in PROJECT_INSTRUCTION
+    assert "Open Project" in PROJECT_INSTRUCTION
+    assert "proposing never executes" in PROJECT_INSTRUCTION
+    assert "disable" in PROJECT_DISABLED_INSTRUCTION
+    assert "disconnect and reconnect" in PROJECT_DISABLED_INSTRUCTION
+    assert "Do not claim an attempted or failed launch" in PROJECT_DISABLED_INSTRUCTION
