@@ -1442,9 +1442,16 @@ class DesktopWindow(QMainWindow):
             )
             item.setData(Qt.ItemDataRole.UserRole, project.id)
             self.project_list.addItem(item)
-        self.projects_notice.setText(
-            f"{len(projects)} project(s) · {len(roots)} authorized discovery folder(s)."
-        )
+        if not projects:
+            self.projects_notice.setText(
+                "No projects registered. Use Add Project or authorize a discovery folder, "
+                "then Refresh Projects."
+            )
+        else:
+            self.projects_notice.setText(
+                f"{len(projects)} project(s) · {len(roots)} authorized discovery folder(s). "
+                "For voice requests, check the option above before connecting or reconnecting."
+            )
 
     def _selected_project_id(self) -> str | None:
         item = self.project_list.currentItem()
