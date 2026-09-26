@@ -146,3 +146,88 @@ def test_catalog_file_uses_nonrepo_location_by_default(monkeypatch, tmp_path):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     assert module.default_project_path() == tmp_path / "FRIDAY" / "projects.json"
     assert not module.default_project_path().exists()
+
+
+def test_combined_workspace_preflights_and_uses_one_registered_directory(tmp_path):
+    store = ProjectCatalog(tmp_path / "projects.json")
+    folder = tmp_path / "Workspace & Tools"
+    folder.mkdir()
+    project = store.add_project(folder)
+    code, terminal = tmp_path / "Code.exe", tmp_path / "wt.exe"
+    code.touch()
+    terminal.touch()
+    calls = []
+    resolved = []
+    paths = {"vscode": code, "terminal": terminal}
+
+    def resolver(application):
+        resolved.append(application)
+        return paths[application]
+
+    launcher = ProjectLauncher(
+        store, platform_name="win32", resolver=resolver,
+        spawn=lambda argv, **kw: calls.append((argv, kw)),
+    )
+    assert calls == []
+    result = launcher.launch(project.id, "workspace")
+    assert result == {
+        "status": "launched", "project": project.name, "application": "workspace",
+    }
+    assert resolved == ["vscode", "terminal"]
+    assert calls == [
+        ([str(code), "--new-window", str(folder.resolve())], {
+            "cwd": str(folder.resolve()), "shell": False, "close_fds": True,
+        }),
+        ([str(terminal), "-w", "0", "new-tab", "-d", str(folder.resolve())], {
+            "cwd": str(folder.resolve()), "shell": False, "close_fds": True,
+        }),
+    ]
+
+
+def test_missing_terminal_prevents_partial_workspace_start(tmp_path):
+    store = ProjectCatalog(tmp_path / "projects.json")
+    folder = tmp_path / "project"
+    folder.mkdir()
+    project = store.add_project(folder)
+    code = tmp_path / "Code.exe"
+    code.touch()
+    calls = []
+    launcher = ProjectLauncher(
+        store, platform_name="win32",
+        resolver=lambda app: code if app == "vscode" else tmp_path / "missing-wt.exe",
+        spawn=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    with pytest.raises(ProjectError, match="unavailable"):
+        launcher.launch(project.id, "workspace")
+    assert calls == []
+
+
+def test_second_process_failure_reports_partial_without_retry(tmp_path):
+    store = ProjectCatalog(tmp_path / "projects.json")
+    folder = tmp_path / "project"
+    folder.mkdir()
+    project = store.add_project(folder)
+    code, terminal = tmp_path / "Code.exe", tmp_path / "wt.exe"
+    code.touch()
+    terminal.touch()
+    calls = []
+
+    def spawn(argv, **kw):
+        calls.append((argv, kw))
+        if len(calls) == 2:
+            raise OSError("private Windows launch error")
+
+    launcher = ProjectLauncher(
+        store, platform_name="win32",
+        resolver=lambda app: code if app == "vscode" else terminal,
+        spawn=spawn,
+    )
+    assert launcher.launch(project.id, "workspace") == {
+        "status": "partial", "project": project.name,
+        "application": "workspace", "opened": "vscode", "failed": "terminal",
+    }
+    assert len(calls) == 2
+    store.remove_project(project.id)
+    with pytest.raises(ProjectError, match="no longer registered"):
+        launcher.launch(project.id, "workspace")
+    assert len(calls) == 2
