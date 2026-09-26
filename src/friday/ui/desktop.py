@@ -58,6 +58,7 @@ from friday.schedule import (
     read_pending_reminder_preview,
     read_worker_health,
 )
+from friday.tools.daily_briefing import DailyBriefingService, briefing_display_lines
 from friday.tools.project_launcher import ProjectLauncher
 from friday.tools.project_status import ProjectGitStatus, ProjectStatusError
 from friday.tools.project_voice import ProjectLaunchProposals
@@ -308,6 +309,23 @@ class VoiceOrb(QWidget):
         painter.drawEllipse(center, 33, 33)
 
 
+class DailyBriefingThread(QThread):
+    """A single on-demand local database read, never voice or background sync."""
+
+    completed = Signal(object)
+
+    def __init__(self, service: DailyBriefingService) -> None:
+        super().__init__()
+        self.service = service
+
+    def run(self) -> None:
+        try:
+            snapshot = self.service.read()
+        except Exception:
+            snapshot = {"status": "error", "error": "local_briefing_unavailable"}
+        self.completed.emit(snapshot)
+
+
 class ProjectStatusThread(QThread):
     """Run bounded, read-only Git inspection away from the Qt event loop."""
 
@@ -345,8 +363,14 @@ class DesktopThread(QThread):
         academic: bool = False,
         projects: bool = False,
         project_catalog: ProjectCatalog | None = None,
+        briefing: bool = False,
+        briefing_academic: bool = False,
+        briefing_reminders: bool = False,
     ) -> None:
         super().__init__()
+        self.briefing = briefing
+        self.briefing_academic = briefing_academic
+        self.briefing_reminders = briefing_reminders
         self.academic = academic
         self.projects = projects
         self.project_catalog = project_catalog
@@ -398,6 +422,13 @@ class DesktopThread(QThread):
                 )
                 if self.projects and self.project_catalog is not None else None
             )
+            briefing_service = (
+                DailyBriefingService(
+                    include_academic=self.briefing_academic,
+                    include_reminders=self.briefing_reminders,
+                )
+                if self.briefing else None
+            )
             manager = SessionManager(
                 GeminiLiveProvider(
                     settings, manual_activity=True, enable_local_clock=True,
@@ -407,6 +438,7 @@ class DesktopThread(QThread):
                     ),
                     reminder_approval=approval,
                     project_proposals=project_proposals,
+                    daily_briefing=briefing_service,
                     enable_academic_calendar=self.academic,
                 ),
                 queue_size=settings.event_queue_size,
@@ -463,6 +495,8 @@ class DesktopWindow(QMainWindow):
         self._project_status_service = ProjectGitStatus(self._projects)
         self._project_status_thread: ProjectStatusThread | None = None
         self._project_status_id: str | None = None
+        self._briefing_service = DailyBriefingService()
+        self._briefing_thread: DailyBriefingThread | None = None
         self._input_device = input_device
         self._output_device = output_device
         self._input_language = input_language
@@ -822,6 +856,37 @@ class DesktopWindow(QMainWindow):
         self.home_columns.addLayout(right, 2)
         page.addLayout(self.home_columns)
 
+        briefing = self._panel()
+        briefing_layout = QVBoxLayout(briefing)
+        briefing_layout.setContentsMargins(17, 15, 17, 15)
+        briefing_layout.setSpacing(9)
+        briefing_layout.addLayout(self._heading(
+            "Today's briefing",
+            subtitle="On-demand local data only · no automatic sync or AI session",
+        ))
+        self.briefing_notice = self._plain_label(
+            "Click Refresh briefing to read saved reminders and the published "
+            "Brightspace calendar snapshot for today."
+        )
+        briefing_layout.addWidget(self.briefing_notice)
+        self.briefing_items = QListWidget()
+        self.briefing_items.setMinimumHeight(175)
+        briefing_layout.addWidget(self.briefing_items)
+        self.briefing_refresh_button = QPushButton("Refresh briefing")
+        self.briefing_refresh_button.clicked.connect(self._refresh_daily_briefing)
+        briefing_layout.addWidget(self.briefing_refresh_button)
+        self.briefing_voice_option = QCheckBox(
+            "Enable spoken daily briefing (next connection; respects existing "
+            "Academic and Reminder voice permissions)"
+        )
+        self.briefing_voice_option.setChecked(False)
+        briefing_layout.addWidget(self.briefing_voice_option)
+        briefing_layout.addWidget(self._plain_label(
+            "Calendar entries are not a complete assignment list. An event labeled "
+            "Due is not an independently verified submission deadline."
+        ))
+        page.addWidget(briefing)
+
         quick = self._panel()
         quick_layout = QVBoxLayout(quick)
         quick_layout.setContentsMargins(17, 14, 17, 14)
@@ -836,6 +901,45 @@ class DesktopWindow(QMainWindow):
         page.addWidget(quick)
         page.addStretch(1)
         self._adapt_home_layout(self.width())
+
+    def _refresh_daily_briefing(self) -> None:
+        if self._briefing_thread is not None or self._quitting or self._closing:
+            return
+        thread = DailyBriefingThread(self._briefing_service)
+        self._briefing_thread = thread
+        self.briefing_refresh_button.setEnabled(False)
+        self.briefing_notice.setText("Reading local daily briefing…")
+        thread.completed.connect(self._display_daily_briefing)
+        thread.finished.connect(self._briefing_finished)
+        thread.start()
+
+    def _display_daily_briefing(self, snapshot: dict) -> None:
+        if self._quitting or self._closing:
+            return
+        self.briefing_items.clear()
+        for line in briefing_display_lines(snapshot):
+            self.briefing_items.addItem(line)
+        if snapshot.get("status") == "ok":
+            self.briefing_notice.setText(
+                f"Local briefing for {snapshot['local_date']} · "
+                "generated on request; no calendar sync was performed."
+            )
+        else:
+            self.briefing_notice.setText("Local briefing unavailable. Try again.")
+
+    def _briefing_finished(self) -> None:
+        if self._briefing_thread is not None:
+            self._briefing_thread.deleteLater()
+            self._briefing_thread = None
+        self.briefing_refresh_button.setEnabled(not self._quitting and not self._closing)
+        if self._quitting:
+            self._finish_quit()
+        elif self._closing and (
+            self._worker is None and self._scheduler is None
+            and self._academic_sync is None and self._project_status_thread is None
+            and self._hotkey_thread is None
+        ):
+            self.close()
 
     def _home_sync_academic(self) -> None:
         """Reuse the canonical manual sync and show its status on the Academic page."""
@@ -1931,7 +2035,7 @@ class DesktopWindow(QMainWindow):
         if (
             self._worker is not None or self._scheduler is not None
             or self._academic_sync is not None or self._project_status_thread is not None
-            or self._hotkey_thread is not None
+            or self._hotkey_thread is not None or self._briefing_thread is not None
         ):
             return
         self._health_timer.stop()
@@ -2327,6 +2431,9 @@ class DesktopWindow(QMainWindow):
             academic=self.academic_voice_option.isChecked(),
             projects=self.project_voice_option.isChecked(),
             project_catalog=self._projects,
+            briefing=self.briefing_voice_option.isChecked(),
+            briefing_academic=self.academic_voice_option.isChecked(),
+            briefing_reminders=self.reminder_option.isChecked(),
         )
         self._worker = worker
         worker.message.connect(self._on_event)
@@ -2511,7 +2618,7 @@ class DesktopWindow(QMainWindow):
         if (
             self._worker is not None or self._scheduler is not None
             or self._academic_sync is not None or self._project_status_thread is not None
-            or self._hotkey_thread is not None
+            or self._hotkey_thread is not None or self._briefing_thread is not None
         ):
             self._closing = True
             if self._hotkey_thread is not None:
