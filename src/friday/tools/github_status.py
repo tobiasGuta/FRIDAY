@@ -190,7 +190,10 @@ def _runs(data: Any) -> dict[str, Any]:
         ):
             raise GitHubReadError("github_invalid_response")
         status = _clean(item.get("status"), 30)
-        conclusion = _clean(item.get("conclusion"), 30) or None
+        conclusion = (
+            (_clean(item.get("conclusion"), 30) or None)
+            if status == "completed" else None
+        )
         items.append({
             "id": item["id"], "name": _clean(item.get("name"), 80),
             "status": status, "conclusion": conclusion,
@@ -231,11 +234,19 @@ class PublicGitHubStatus:
              _pulls),
             ("workflows", f"{base}/actions/runs?per_page=6", _runs),
         )
+        rate_limited = False
         for key, url, parser in endpoints:
+            if rate_limited:
+                result[key] = {
+                    "state": "error", "error": "github_rate_limited_or_forbidden",
+                    "items": [],
+                }
+                continue
             try:
                 result[key] = parser(self.getter(url))
             except GitHubReadError as exc:
                 result[key] = {"state": "error", "error": exc.code, "items": []}
+                rate_limited = exc.code == "github_rate_limited_or_forbidden"
             except Exception:
                 result[key] = {
                     "state": "error", "error": "github_unavailable", "items": [],
