@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.12 — Today's Briefing (experimental; Windows acceptance pending)
+
+- Add an on-demand, offline Home briefing for today's locally published
+  Brightspace calendar entries and saved pending reminders due later today.
+- Read-only SQLite reminder query respects local-midnight/DST boundaries,
+  excludes timers/expired reminders and never creates/migrates storage.
+- Preserve exact academic source categories, sync freshness, incomplete-feed
+  caveat, recurrence caveat and bounded/truncated presentation.
+- Add separate off-by-default spoken briefing; it respects existing academic
+  and reminder voice toggles, and executes off the Live event loop.
+- Preserve v0.5.11 shortcut, v0.5.10 workspace, v0.5.9 Git status, individual
+  launch confirmations and existing hologram without new dependencies.
+
+
 ## 0.5.11 — Opt-in Summon Shortcut (experimental; Windows acceptance pending)
 
 - Add an off-by-default Ctrl+Alt+Shift+F global shortcut that reveals FRIDAY's
