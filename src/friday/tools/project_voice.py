@@ -13,11 +13,13 @@ from typing import Literal
 from pydantic import Field
 
 from friday.tools.project_launcher import Application, ProjectLauncher
+from friday.tools.project_status import ProjectGitStatus, ProjectStatusError
 from friday.tools.projects import ProjectCatalog, ProjectError
 from friday.tools.registry import ToolArguments, ToolRegistry, ToolSpec
 
 LIST_PROJECTS_TOOL = "list_local_projects"
 PROPOSE_LAUNCH_TOOL = "propose_project_launch"
+GET_PROJECT_STATUS_TOOL = "get_local_project_status"
 PROPOSAL_TTL_SECONDS = 300.0
 
 
@@ -30,6 +32,10 @@ class ProposeLaunchArguments(ToolArguments):
     application: Literal["vscode", "terminal"]
 
 
+class ProjectStatusArguments(ToolArguments):
+    project: str = Field(min_length=1, max_length=80)
+
+
 @dataclass(frozen=True, slots=True)
 class PendingProjectLaunch:
     project_id: str
@@ -40,9 +46,13 @@ class PendingProjectLaunch:
 
 
 class ProjectLaunchProposals:
-    def __init__(self, catalog: ProjectCatalog, launcher: ProjectLauncher) -> None:
+    def __init__(
+        self, catalog: ProjectCatalog, launcher: ProjectLauncher,
+        *, status_service: ProjectGitStatus | None = None,
+    ) -> None:
         self.catalog = catalog
         self.launcher = launcher
+        self.status_service = status_service or ProjectGitStatus(catalog)
         self._pending: PendingProjectLaunch | None = None
 
     def pending(self) -> PendingProjectLaunch | None:
@@ -69,6 +79,20 @@ class ProjectLaunchProposals:
             "status": "ok", "projects": matching[:30],
             "more": len(matching) > 30,
         }
+
+    def status(self, args: ProjectStatusArguments) -> dict:
+        try:
+            project = self.catalog.match(args.project)
+            snapshot = self.status_service.read(project.id)
+        except ProjectError as exc:
+            code = (
+                "ambiguous_project" if str(exc).startswith("Several") else "unknown_project"
+            )
+            return {"status": "error", "error": code}
+        except ProjectStatusError as exc:
+            return {"status": "error", "error": exc.code}
+        # Commit subjects and filenames are not transmitted to the voice model.
+        return {key: value for key, value in snapshot.items() if key != "last_subject"}
 
     def propose(self, args: ProposeLaunchArguments) -> dict[str, str]:
         if self.pending() is not None:
@@ -126,6 +150,17 @@ def register_project_tools(
         arguments=ListProjectsArguments,
         handler=proposals.list_projects,
         notice="Read approved project names",
+    ))
+    registry.register(ToolSpec(
+        name=GET_PROJECT_STATUS_TOOL,
+        description=(
+            "Read local Git branch, bounded changed/untracked entry counts and last "
+            "commit ID/time for an exactly registered project. No filenames, paths, "
+            "diffs, file contents, commit subjects, network or modifications."
+        ),
+        arguments=ProjectStatusArguments,
+        handler=proposals.status,
+        notice="Read local Git repository status",
     ))
     registry.register(ToolSpec(
         name=PROPOSE_LAUNCH_TOOL,
