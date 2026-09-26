@@ -68,9 +68,8 @@ from friday.ui.desktop_session import DesktopVoiceSession
 from friday.ui.desktop_theme import STYLE
 from friday.ui.focus_context import focus_ui_target
 from friday.ui.hologram_lab import animation_speed, paint_orbital_lab
-from friday.ui.summon_hotkey import (
-    HOTKEY_LABEL, SUPPORTED as SUMMON_SUPPORTED, SummonHotkeyThread,
-)
+from friday.ui.summon_hotkey import HOTKEY_LABEL, SummonHotkeyThread
+from friday.ui.summon_hotkey import SUPPORTED as SUMMON_SUPPORTED
 from friday.voice_reminders import VoiceReminderApproval
 
 
