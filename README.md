@@ -1,6 +1,6 @@
 # FRIDAY
 
-**Experimental v0.5.8 Project Launcher branch:** Local project discovery and manual registration with separately approved VS Code / Windows Terminal launch requests. Based on the visually accepted v0.5.7 Slice 2A checkpoint; the accepted v0.5.6 Classic orb remains available. This branch is not a released version.
+**Experimental v0.5.9 Project Status branch:** Local read-only Git status for registered projects, built on the Windows-accepted v0.5.8 launcher. The hologram and Classic fallback remain unchanged. This branch is not a released version.
 
 A harness-first personal AI assistant. **v0.5.6 Focus Voice is merged into main, following v0.5.5 hybrid dashboard. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
@@ -105,6 +105,29 @@ Project launching is unavailable on other platforms; the registry and tests
 remain cross-platform. The process-start acknowledgment is **not** proof the
 application finished loading. No general shell access, arbitrary program
 execution, auto-coding or file mutation is added.
+
+### Project status intelligence (v0.5.9 Slice 1, experimental)
+
+The Projects page has **Check Git Status** for the selected registered
+repository. It runs in a bounded background worker and displays its current
+branch, staged/modified/untracked entry counts, plus the most recent commit
+subject and short ID. No Gemini connection, API key or microphone is needed.
+An untracked folder can count as one entry. Ignored files are not counted.
+A registered subfolder is not silently treated as its parent repository.
+
+When **Enable voice project requests** is checked **before connecting**,
+FRIDAY also offers a read-only `get_local_project_status` tool. It first
+resolves the project through the existing registry and returns branch,
+counts, latest commit ID and timestamp. It does **not** send paths,
+filenames, commit subjects, file contents or diffs to Gemini. Neither
+interface runs Git fetch, pull, push, commit, checkout, or any other
+modifying/network operation; no arbitrary model-supplied Git arguments
+or directories are accepted. Local Git must be installed.
+
+Example: "FRIDAY, what's the Git status of ParamIntel?" This reports local
+working-tree state only, **not** whether GitHub CI passed or the remote
+branch is up to date. Confirmation is still required for project launching,
+and the separate reminder approval remains unchanged.
 
 ### Hologram Lab (v0.5.7 Slice 1 + optional Slice 2A, experimental)
 
