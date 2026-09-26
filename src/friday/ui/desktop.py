@@ -1542,7 +1542,7 @@ class DesktopWindow(QMainWindow):
         )
         self.project_status_detail.setText(
             f"{result['project']} · Branch: {result['branch']} · "
-            f"{'Clean' if result['clean'] else counts}\\n{commit}"
+            f"{'Clean' if result['clean'] else counts}\n{commit}"
         )
 
     def _project_status_finished(self) -> None:
