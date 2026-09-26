@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.11 — Opt-in Summon Shortcut (experimental; Windows acceptance pending)
+
+- Add an off-by-default Ctrl+Alt+Shift+F global shortcut that reveals FRIDAY's
+  running window; no startup persistence, auto voice, microphone or model call.
+- Own Win32 RegisterHotKey, GetMessage and UnregisterHotKey on a dedicated
+  worker; forward activation through Qt queued signals to the GUI thread.
+- Handle conflicting registrations, release on disable/quit, preserve existing
+  tray controls, current page, project launch approvals and hologram.
+- Native event-loop and headless Qt tests, Windows acceptance required.
+
+
 ## 0.5.10 — Combined Development Workspace (experimental; Windows acceptance pending)
 
 - Add an offline **Open Development Workspace** button for exact registered
