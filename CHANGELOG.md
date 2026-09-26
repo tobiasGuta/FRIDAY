@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.8 — Project Launcher (experimental branch; Windows acceptance pending)
+
+- Add an opt-in local catalog with manual folder picker and bounded one-level
+  discovery under user-authorized parent folders; no hardcoded project names.
+  Persist configuration outside the repo and support refresh, hide and remove.
+- Add confirmed fixed-argument VS Code and Windows Terminal launches for exact
+  registered directory IDs. No shell, arbitrary commands or other applications.
+- Add opt-in Live project-listing and **non-executing** proposal tools, a separate
+  Qt confirmation card, one-use five-minute expiry and disconnect cancellation.
+  Voice speech is never authorization; filesystem paths stay out of model tool
+  results and reminder approvals stay independent.
+- Keep the v0.5.7 Slice 2A hologram checkpoint and v0.5.6 Classic fallback;
+  no new dependencies, persistent conversation memory or automatic connections.
+
+
 ## 0.5.7 — Hologram Lab, Slice 1 + optional Slice 2A (experimental; Windows acceptance pending)
 
 - Slice 2A: add an independent, off-by-default floating energy particle layer

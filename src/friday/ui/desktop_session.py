@@ -14,6 +14,7 @@ from friday.audio.devices import AudioDeviceError
 from friday.audio.turns import VoiceTurns
 from friday.core.events import EventKind, SessionState
 from friday.core.session import SessionError, SessionManager
+from friday.tools.project_voice import ProjectLaunchProposals
 from friday.voice_reminders import ReminderDraft, VoiceReminderApproval
 
 UiEvent = Callable[[str, Any], None]
@@ -44,6 +45,7 @@ class DesktopVoiceSession:
         approval: VoiceReminderApproval | None,
         emit: UiEvent,
         max_seconds: int,
+        project_proposals: ProjectLaunchProposals | None = None,
     ) -> None:
         if not 5 <= max_seconds <= 3600:
             raise ValueError("Session duration must be 5 to 3600 seconds")
@@ -51,6 +53,7 @@ class DesktopVoiceSession:
         self.speaker = speaker
         self.turns = VoiceTurns(manager, microphone, speaker)
         self.approval = approval
+        self.project_proposals = project_proposals
         self.emit = emit
         self.max_seconds = max_seconds
         self.commands: asyncio.Queue[str] = asyncio.Queue(maxsize=8)
@@ -66,7 +69,10 @@ class DesktopVoiceSession:
 
     def request(self, command: str) -> None:
         """Must be called on the owning asyncio loop, not the Qt thread."""
-        if command not in {"start", "stop", "approve", "reject", "quit"}:
+        if command not in {
+            "start", "stop", "approve", "reject",
+            "project_approve", "project_reject", "quit",
+        }:
             return
         if command == "quit":
             self._quit_requested = True
@@ -79,6 +85,8 @@ class DesktopVoiceSession:
     def _pending(self) -> None:
         if self.approval is not None:
             self.emit("draft", draft_display(self.approval.pending()))
+        if self.project_proposals is not None:
+            self.emit("project_draft", self.project_proposals.display())
 
     def _reminders(self) -> None:
         if self.approval is None:
@@ -274,6 +282,17 @@ class DesktopVoiceSession:
                                     self.approval.approve() if command == "approve"
                                     else self.approval.reject()
                                 )
+                            elif command in {"project_approve", "project_reject"} and (
+                                self.project_proposals is not None and not self.turns.recording
+                                and not self.turns.awaiting_response
+                            ) and loop.time() < expires:
+                                result = (
+                                    self.project_proposals.approve()
+                                    if command == "project_approve"
+                                    else self.project_proposals.reject()
+                                )
+                                self.emit("project_result", result)
+                                self._pending()
                         if sender is not None and sender in done and self.turns.recording:
                             if sender.cancelled():
                                 raise AudioDeviceError("Microphone capture stopped unexpectedly")
@@ -360,6 +379,9 @@ class DesktopVoiceSession:
                     if self.approval is not None:
                         self.approval.abort_turn()
                         self.approval.reject()
+                    if self.project_proposals is not None:
+                        self.project_proposals.reject()
+                        self.emit("project_draft", None)
                     self.emit("draft", None)
                     if self._end_reason is not None and not self._quit_requested:
                         self.emit("recovery", self._end_reason)

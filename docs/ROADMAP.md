@@ -188,6 +188,16 @@
 - Slice 3 (not implemented): richer motion state transitions and reduced-motion
   preference; evaluate performance rather than assume smoothness.
 
+## v0.5.8 — Project Launcher (experimental branch)
+
+- Dynamic local project registry: manually selected folders and direct children
+  of explicitly authorized roots. No hardcoded names, automatic whole-drive
+  scan, arbitrary shell commands or auto-coding.
+- Desktop Projects page opens VS Code or Windows Terminal after a separate
+  confirmation; opt-in Live tools can only list and draft launch requests.
+- Offline tests and Windows/Ubuntu CI required; real Windows VS Code/Terminal
+  and voice approvals require user acceptance before merge.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

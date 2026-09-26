@@ -1,6 +1,6 @@
 # FRIDAY
 
-**Experimental v0.5.7 Hologram Lab, Slice 1:** Optional Qt-painted orbital/core rendering; the accepted v0.5.6 Classic orb remains the default. No voice, model, network, reminder or approval behavior changes.
+**Experimental v0.5.8 Project Launcher branch:** Local project discovery and manual registration with separately approved VS Code / Windows Terminal launch requests. Based on the visually accepted v0.5.7 Slice 2A checkpoint; the accepted v0.5.6 Classic orb remains available. This branch is not a released version.
 
 A harness-first personal AI assistant. **v0.5.6 Focus Voice is merged into main, following v0.5.5 hybrid dashboard. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
@@ -67,6 +67,44 @@ until you click **Connect**. Use **Start talking**, speak, then **Stop recording
 wait for **Ready** before the next turn. Reminder drafts are on by default and web
 search is off unless you opt in. You can use `--no-reminders`, `--web`, or
 `--input-language auto`; the original `talk` CLI remains available.
+
+### Project Launcher (v0.5.8, experimental)
+
+Open **Panels → Projects** from the Focus Voice screen, or use the Projects
+dashboard navigation. The page is local and works even while FRIDAY is
+disconnected. On first launch it contains no projects and scans **nothing**
+automatically.
+
+- **Authorize Discovery Folder** to remember a parent directory such as your
+  own development folder. **Refresh Projects** discovers its immediate
+  subdirectories only; new projects appear without editing Python code.
+  Hidden directories, symlinks and Windows junctions are excluded. At most
+  eight authorized folders and 256 listed projects are supported.
+- **Add Project** uses the system folder picker and an editable display name.
+  It can register a project outside every discovery folder.
+- Select a project and choose **Open in VS Code** or **Open Terminal**. FRIDAY
+  shows a confirmation dialog before issuing a fixed-argument Windows launch.
+  The terminal is opened **in that directory**; no command is executed inside it.
+- Remove / hide a project without deleting its files. A discovered entry stays
+  hidden until manually added again. Remove a discovery folder to stop scanning it.
+- Configuration is local, outside the repository, at
+  `%LOCALAPPDATA%\\FRIDAY\\projects.json` on Windows. No project list is
+  uploaded to a service by the local Projects page.
+
+**Voice launch requests are off by default.** On Projects, check **Enable
+voice project requests (next connection)** before connecting. Gemini can only
+list registered names and draft a launch request; names/opaque IDs but **not
+filesystem paths** are sent as tool results. FRIDAY shows a separate **Open
+Project / Cancel** card. Only clicking Open Project after the current spoken
+turn has completed authorizes the app-owned launch. Speech alone never approves
+it. Pending requests expire after five minutes and are discarded on voice
+disconnect. Reminder approval is independent.
+
+The feature works on Windows with installed VS Code and Windows Terminal.
+Project launching is unavailable on other platforms; the registry and tests
+remain cross-platform. The process-start acknowledgment is **not** proof the
+application finished loading. No general shell access, arbitrary program
+execution, auto-coding or file mutation is added.
 
 ### Hologram Lab (v0.5.7 Slice 1 + optional Slice 2A, experimental)
 
