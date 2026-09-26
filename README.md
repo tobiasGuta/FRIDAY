@@ -1,6 +1,6 @@
 # FRIDAY
 
-**Experimental v0.5.10 Combined Workspace branch:** One confirmed request opens a registered project in both VS Code and Windows Terminal. Built on the Windows-accepted v0.5.9 project-status checkpoint; no changes to the accepted hologram. This branch is not a released version.
+**Experimental v0.5.11 Summon Shortcut branch:** An opt-in Windows-wide key combination reveals FRIDAY without opening the microphone or a Gemini connection. Built on the Windows-accepted v0.5.10 workspace checkpoint; the accepted hologram is unchanged. This branch is not a released version.
 
 A harness-first personal AI assistant. **v0.5.6 Focus Voice is merged into main, following v0.5.5 hybrid dashboard. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
@@ -148,6 +148,24 @@ Windows process-start requests do not prove the application finished loading.
 If Code starts but Terminal fails to start, FRIDAY reports a *partial*
 result, makes no automatic retry, and does not say both opened. Existing
 single-application buttons and the local Git status tool are unchanged.
+
+### Summon shortcut (v0.5.11, experimental)
+
+In **Settings → Summon shortcut**, explicitly check **Enable global shortcut**.
+While FRIDAY is running on Windows, press **Ctrl + Alt + Shift + F**
+from another application to reveal its existing window. The shortcut is
+**off by default** and is not saved across app restarts. Hiding FRIDAY
+to the system tray leaves the shortcut active until disabled or Quit.
+The existing tray **Open FRIDAY** option remains available.
+
+This shortcut only shows and requests focus for FRIDAY's existing window.
+It does not connect Gemini, activate the microphone, start speech capture,
+choose a different page, approve a pending action, or create a background
+autostart entry. If another application owns the key combination, the
+registration fails without overriding it; disable it or use the tray.
+Windows can refuse foreground activation under its normal focus restrictions.
+The Windows-wide hook is released on disable and explicit application exit,
+and is unavailable on Linux/macOS.
 
 ### Hologram Lab (v0.5.7 Slice 1 + optional Slice 2A, experimental)
 

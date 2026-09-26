@@ -13,7 +13,7 @@ import threading
 from datetime import datetime
 from typing import Any
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QRadialGradient
 from PySide6.QtWidgets import (
     QApplication,
@@ -68,6 +68,8 @@ from friday.ui.desktop_session import DesktopVoiceSession
 from friday.ui.desktop_theme import STYLE
 from friday.ui.focus_context import focus_ui_target
 from friday.ui.hologram_lab import animation_speed, paint_orbital_lab
+from friday.ui.summon_hotkey import HOTKEY_LABEL, SummonHotkeyThread
+from friday.ui.summon_hotkey import SUPPORTED as SUMMON_SUPPORTED
 from friday.voice_reminders import VoiceReminderApproval
 
 
@@ -476,6 +478,7 @@ class DesktopWindow(QMainWindow):
         self._closing = False
         self._quitting = False
         self._tray: QSystemTrayIcon | None = None
+        self._hotkey_thread: SummonHotkeyThread | None = None
         self._state = "Disconnected"
         self._last_recovery: str | None = None
         self._draft: dict[str, str] | None = None
@@ -1688,6 +1691,26 @@ class DesktopWindow(QMainWindow):
             self._open_page_button("Scheduler settings", "Calendar")
         )
         page.addWidget(integrations)
+        shortcut = self._panel()
+        shortcut_layout = QVBoxLayout(shortcut)
+        shortcut_layout.addLayout(self._heading(
+            "Summon shortcut",
+            subtitle="Bring the existing FRIDAY window forward without starting voice.",
+        ))
+        self.summon_hotkey_option = QCheckBox(
+            f"Enable global shortcut · {HOTKEY_LABEL} (this app session only)"
+        )
+        self.summon_hotkey_option.setChecked(False)
+        self.summon_hotkey_option.setEnabled(SUMMON_SUPPORTED)
+        self.summon_hotkey_option.toggled.connect(self._toggle_summon_hotkey)
+        shortcut_layout.addWidget(self.summon_hotkey_option)
+        self.summon_hotkey_notice = self._plain_label(
+            "Off by default. No microphone, Gemini connection, or background "
+            "startup. Use the existing tray Open FRIDAY action at any time."
+            if SUMMON_SUPPORTED else "Global summon shortcut is Windows-only."
+        )
+        shortcut_layout.addWidget(self.summon_hotkey_notice)
+        page.addWidget(shortcut)
         appearance = self._panel()
         appearance_layout = QVBoxLayout(appearance)
         appearance_layout.addLayout(self._heading("Appearance"))
@@ -1697,6 +1720,73 @@ class DesktopWindow(QMainWindow):
         ))
         page.addWidget(appearance)
         page.addStretch(1)
+
+    def _toggle_summon_hotkey(self, enabled: bool) -> None:
+        if enabled:
+            if (
+                not SUMMON_SUPPORTED or self._quitting or self._closing
+                or self._hotkey_thread is not None
+            ):
+                self.summon_hotkey_option.setChecked(False)
+                return
+            thread = SummonHotkeyThread()
+            self._hotkey_thread = thread
+            thread.activated.connect(
+                self._summon_window, Qt.ConnectionType.QueuedConnection
+            )
+            thread.registration.connect(
+                self._hotkey_registration, Qt.ConnectionType.QueuedConnection
+            )
+            thread.finished.connect(self._hotkey_finished)
+            self.summon_hotkey_notice.setText("Registering shortcut with Windows…")
+            thread.start()
+        else:
+            if self._hotkey_thread is not None:
+                self._hotkey_thread.request_stop()
+            if not self._quitting and not self._closing:
+                self.summon_hotkey_notice.setText("Shortcut disabled.")
+
+    @Slot()
+    def _summon_window(self) -> None:
+        if (
+            not self.summon_hotkey_option.isChecked()
+            or self._quitting or self._closing
+        ):
+            return
+        # UI presentation only; preserve current page and existing mic state.
+        self._open_window()
+
+    @Slot(bool, str)
+    def _hotkey_registration(self, ok: bool, message: str) -> None:
+        if self._quitting or self._closing:
+            return
+        if ok and not self.summon_hotkey_option.isChecked():
+            return
+        self.summon_hotkey_notice.setText(message)
+        if not ok:
+            self.summon_hotkey_option.setChecked(False)
+
+    @Slot()
+    def _hotkey_finished(self) -> None:
+        thread = self._hotkey_thread
+        if thread is None:
+            return
+        thread.deleteLater()
+        self._hotkey_thread = None
+        if self.summon_hotkey_option.isChecked():
+            self.summon_hotkey_option.blockSignals(True)
+            self.summon_hotkey_option.setChecked(False)
+            self.summon_hotkey_option.blockSignals(False)
+            if not self._quitting and not self._closing:
+                self.summon_hotkey_notice.setText("Shortcut stopped; enable to retry.")
+        if self._quitting:
+            self._finish_quit()
+        elif self._closing and (
+            self._worker is None and self._scheduler is None
+            and self._academic_sync is None
+            and self._project_status_thread is None
+        ):
+            self.close()
 
     def _navigate(self, destination: str) -> None:
         if destination not in self._page_subtitles:
@@ -1824,6 +1914,8 @@ class DesktopWindow(QMainWindow):
         if self._quitting:
             return
         self._quitting = True
+        if self._hotkey_thread is not None:
+            self._hotkey_thread.request_stop()
         self._health_timer.stop()
         self._academic_timer.stop()
         self._clock_timer.stop()
@@ -1839,6 +1931,7 @@ class DesktopWindow(QMainWindow):
         if (
             self._worker is not None or self._scheduler is not None
             or self._academic_sync is not None or self._project_status_thread is not None
+            or self._hotkey_thread is not None
         ):
             return
         self._health_timer.stop()
@@ -2418,8 +2511,11 @@ class DesktopWindow(QMainWindow):
         if (
             self._worker is not None or self._scheduler is not None
             or self._academic_sync is not None or self._project_status_thread is not None
+            or self._hotkey_thread is not None
         ):
             self._closing = True
+            if self._hotkey_thread is not None:
+                self._hotkey_thread.request_stop()
             if self._worker is not None:
                 self._worker.request("quit")
                 self._set_state("Disconnecting")
