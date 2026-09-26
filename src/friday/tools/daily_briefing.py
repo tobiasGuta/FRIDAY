@@ -140,6 +140,65 @@ class DailyBriefingService:
             return {"state": "unavailable", "items": [], "more": False}
 
 
+def briefing_display_lines(result: dict[str, Any]) -> tuple[str, ...]:
+    """Bounded plain-text UI presentation; no HTML or asserted assignment coverage."""
+    if result.get("status") != "ok":
+        return ("Local briefing unavailable; try again.",)
+    lines = [f"Local calendar day: {result['local_date']}"]
+    academic = result["academic"]
+    state = academic["state"]
+    if state == "disabled":
+        lines.append("Academic: not included in this briefing.")
+    elif state == "not_synced":
+        lines.append("Academic: no locally synced Brightspace calendar yet.")
+    elif state == "unavailable":
+        lines.append("Academic: local calendar cache unavailable.")
+    else:
+        lines.append(
+            "Academic: published calendar entries only · last sync "
+            + academic["last_sync_display"]
+        )
+        if academic["freshness"] == "older_than_24h":
+            lines.append("Academic cache is older than 24 hours; information may be stale.")
+        elif academic["freshness"] == "time_unreliable":
+            lines.append("Academic cache timestamp is ahead of the local clock.")
+        if not academic["items"]:
+            lines.append("No items shown for today in the published local calendar.")
+        for item in academic["items"]:
+            label = (
+                "Due (task)" if item["explicit_due"]
+                else "Brightspace-labeled Due (event; not verified)"
+                if item["source_labeled_due"] else "Scheduled (calendar event)"
+            )
+            recurring = " · recurring series, not expanded" if item["recurring_series"] else ""
+            lines.append(
+                f"{label}: {item['title']} · {item['calendar_time']}{recurring}"
+            )
+        if academic["more"]:
+            lines.append("More published calendar entries exist for today; showing eight.")
+    reminders = result["reminders"]
+    state = reminders["state"]
+    if state == "disabled":
+        lines.append("Reminders: not included in this briefing.")
+    elif state == "unavailable":
+        lines.append("Reminders: local storage unavailable.")
+    elif state == "not_set_up":
+        lines.append("Reminders: no local reminder store yet.")
+    else:
+        lines.append(
+            f"Reminders: {reminders['count']} saved pending reminder(s) "
+            "due later today."
+        )
+        for item in reminders["items"]:
+            lines.append(f"Reminder · {item['due_display']}: {item['text']}")
+        if reminders["more"]:
+            lines.append("More reminders due today; showing five.")
+    lines.append(
+        "Calendar feed coverage is incomplete; recurring series are not expanded."
+    )
+    return tuple(lines)
+
+
 def register_daily_briefing(
     registry: ToolRegistry, service: DailyBriefingService
 ) -> None:
