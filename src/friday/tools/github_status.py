@@ -102,10 +102,15 @@ def registered_public_repo(catalog: ProjectCatalog, project_id: str, *,
         raise GitHubReadError("git_unavailable_or_not_repository") from exc
     if os.path.normcase(str(resolved_root)) != os.path.normcase(str(project.path)):
         raise GitHubReadError("not_repository_root")
-    origin = _git_output(
-        project.path, ["config", "--local", "--get-all", "remote.origin.url"],
-        runner=runner,
-    )
+    try:
+        origin = _git_output(
+            project.path, ["config", "--local", "--get-all", "remote.origin.url"],
+            runner=runner,
+        )
+    except GitHubReadError as exc:
+        if exc.code == "git_unavailable_or_not_repository":
+            raise GitHubReadError("unsupported_origin") from exc
+        raise
     # Never echo origin: it could contain a token or a different private host.
     if len(origin.splitlines()) != 1:
         raise GitHubReadError("unsupported_origin")
@@ -179,7 +184,10 @@ def _runs(data: Any) -> dict[str, Any]:
         raise GitHubReadError("github_invalid_response")
     items = []
     for item in data["workflow_runs"][:MAX_RUNS]:
-        if not isinstance(item, dict) or type(item.get("id")) is not int:
+        if (
+            not isinstance(item, dict) or type(item.get("id")) is not int
+            or not 1 <= item["id"] <= 10**20
+        ):
             raise GitHubReadError("github_invalid_response")
         status = _clean(item.get("status"), 30)
         conclusion = _clean(item.get("conclusion"), 30) or None
