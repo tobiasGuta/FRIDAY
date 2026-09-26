@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.13 — Public GitHub Status (experimental; Windows acceptance pending)
+
+- Add on-demand public GitHub open-PR preview and recent repository-wide
+  Actions workflow status for exactly registered local GitHub-origin projects.
+- Two bounded, unauthenticated HTTPS GETs only on explicit click/request; no
+  token storage, private repo access, redirect, arbitrary host or Git write.
+- Add Projects-page button and independent opt-in voice tool gated by existing
+  project voice permission. Keep latest run branch/event distinct from PR
+  checks, queued/in-progress runs distinct from completed conclusions.
+- Report partial/missing/rate-limited data truthfully; no retry/polling.
+- Preserve accepted v0.5.12 daily briefing, shortcut, workspace, Git-status
+  controls, launch approvals and hologram; no added package dependency.
+
+
 ## 0.5.12 — Today's Briefing (experimental; Windows acceptance pending)
 
 - Add an on-demand, offline Home briefing for today's locally published
