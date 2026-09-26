@@ -13,6 +13,7 @@ from typing import Any, Literal
 from friday.tools.projects import ProjectCatalog, ProjectError
 
 Application = Literal["vscode", "terminal"]
+LaunchTarget = Literal["vscode", "terminal", "workspace"]
 
 
 def _installed_executable(application: Application) -> Path:
@@ -63,22 +64,53 @@ class ProjectLauncher:
         self.resolver = resolver
         self.spawn = spawn
 
-    def launch(self, project_id: str, application: Application) -> dict[str, str]:
+    def launch(self, project_id: str, application: LaunchTarget) -> dict[str, str]:
+        """One confirmed request; workspace preflights both known executables.
+
+        A successful spawn confirms a process-start request only, not readiness.
+        If Terminal fails after Code starts, report that partial result rather
+        than pretending the workspace was opened or retrying automatically.
+        """
         if self.platform_name != "win32":
             raise ProjectError("Project launching is currently supported on Windows only.")
-        if application not in ("vscode", "terminal"):
+        if application not in ("vscode", "terminal", "workspace"):
             raise ProjectError("Unsupported application.")
-        # Fresh lookup ensures a deleted or removed project cannot use a stale path.
+        # Fresh registered-project lookup; neither voice nor UI supplies a path.
         project = self.catalog.find(project_id)
-        executable = self.resolver(application)
-        if not executable.is_file() or executable.suffix.casefold() != ".exe":
-            raise ProjectError("The selected application launcher is unavailable.")
-        if application == "vscode":
-            argv = [str(executable), "--new-window", str(project.path)]
-        else:
-            argv = [str(executable), "-w", "0", "new-tab", "-d", str(project.path)]
-        try:
-            self.spawn(argv, cwd=str(project.path), shell=False, close_fds=True)
-        except OSError as exc:
-            raise ProjectError("Windows could not start the selected application.") from exc
-        return {"status": "launched", "project": project.name, "application": application}
+        targets: tuple[Application, ...] = (
+            ("vscode", "terminal") if application == "workspace" else (application,)
+        )
+        # Preflight BOTH applications before attempting either process. An
+        # unavailable Terminal should not unexpectedly leave only Code open.
+        executables: dict[Application, Path] = {}
+        for target in targets:
+            executable = self.resolver(target)
+            if not executable.is_file() or executable.suffix.casefold() != ".exe":
+                raise ProjectError("The selected application launcher is unavailable.")
+            executables[target] = executable
+
+        opened: list[Application] = []
+        for target in targets:
+            executable = executables[target]
+            argv = (
+                [str(executable), "--new-window", str(project.path)]
+                if target == "vscode" else
+                [str(executable), "-w", "0", "new-tab", "-d", str(project.path)]
+            )
+            try:
+                self.spawn(argv, cwd=str(project.path), shell=False, close_fds=True)
+            except OSError as exc:
+                if not opened:
+                    raise ProjectError(
+                        "Windows could not start the selected application."
+                    ) from exc
+                return {
+                    "status": "partial", "project": project.name,
+                    "application": application,
+                    "opened": ",".join(opened), "failed": target,
+                }
+            opened.append(target)
+        return {
+            "status": "launched", "project": project.name,
+            "application": application,
+        }
