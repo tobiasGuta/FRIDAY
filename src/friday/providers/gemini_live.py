@@ -137,7 +137,7 @@ GITHUB_INSTRUCTION = (
     "no private repositories, authentication, merge, push, rerun or Git fetch. "
     "Report the checked repository and that PRs are an up-to-ten open preview "
     "ordered by update time, not a complete list. Recent runs are repository-wide "
-    "across branches, not automatically checks for a requested PR or local branch. "
+    "across branches, not PR-specific checks for a requested PR or local branch. "
     "For every run, distinguish status from conclusion: queued or in_progress "
     "is NOT success, and a success on another branch is not this branch's CI. "
     "If either source is unavailable, rate-limited or partial, say so, and do "
