@@ -113,9 +113,14 @@ class ProjectGitStatus:
                     staged += int(code[:1] != b" ")
                     changed += int(code[1:2] != b" ")
 
-        raw_branch = self._git(project.path, "rev-parse", "--abbrev-ref", "HEAD")
-        assert raw_branch is not None
-        branch = _plain(raw_branch.decode("utf-8", "replace"), limit=100) or "unknown"
+        raw_branch = self._git(
+            project.path, "symbolic-ref", "--quiet", "--short", "HEAD",
+            allow_failure=True,
+        )
+        branch = (
+            _plain(raw_branch.decode("utf-8", "replace"), limit=100)
+            if raw_branch is not None else "detached HEAD"
+        ) or "unknown"
 
         raw_commit = self._git(
             project.path, "log", "-1", "--no-show-signature",
