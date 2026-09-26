@@ -1,6 +1,6 @@
 # FRIDAY
 
-**Experimental v0.5.12 Daily Briefing branch:** An on-demand local today summary combines saved reminders with already-cached Brightspace calendar items. Built on the Windows-accepted v0.5.11 summon shortcut checkpoint; the accepted hologram is unchanged. This branch is not a released version.
+**Experimental v0.5.13 Public GitHub Status branch:** Opt-in read-only open-PR and recent-workflow previews for registered projects whose origin is github.com. Built on the Windows-accepted v0.5.12 briefing checkpoint; the accepted hologram remains unchanged. This branch is not a released version.
 
 A harness-first personal AI assistant. **v0.5.6 Focus Voice is merged into main, following v0.5.5 hybrid dashboard. The earlier voice, academic, reminder and scheduler functionality remains intact.**
 
@@ -193,6 +193,37 @@ Google Calendar, grades, full assignment lists, projects, or the internet.
 The offline Home button and voice tool are separate, intentionally
 user-initiated paths. No daily push notification, background polling,
 new credentials, model session, or calendar event inference is added.
+
+### Public GitHub PR / CI status (v0.5.13, experimental)
+
+Open **Panels → Projects**, select a registered project with a public
+`github.com` origin and click **Check public GitHub PR / CI**. FRIDAY reads
+that repository's open pull-request preview (up to ten, most recently
+updated) and the latest five GitHub Actions workflow runs **across branches**.
+Each run shows its own branch, event, current status and conclusion if
+completed. A success on `main` does not prove a PR or different branch
+passed CI. These are repository-level recent runs, **not** per-PR checks.
+The preview can be truncated and does not inspect commit-to-remote
+synchronization or source code.
+
+For spoken requests, enable **voice project requests** and the separate
+**public GitHub PR / CI voice lookup** on the Projects page *before
+connecting or reconnecting*. Say "FRIDAY, what are the open PRs on
+Reconductor?" or "What are ParamIntel's recent GitHub Actions runs?"
+FRIDAY resolves only its registered local project; it never accepts a
+model-supplied URL or arbitrary repository host.
+
+This first slice fetches **public GitHub API resources without a GitHub
+token**. An origin pointing to another host, containing embedded credentials,
+or referencing an inaccessible/private repository fails closed. The
+unauthenticated API is rate-limited; errors and partial results are reported
+rather than treated as empty or successful. FRIDAY makes two bounded HTTPS
+GETs **only after a button click or explicit enabled voice request**;
+no automatic polling, API credentials, Git fetch/pull/push, PR merges,
+workflow reruns or GitHub mutations. Private-repo support would need a
+separately approved authentication design in a later milestone.
+[GitHub API rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)
+apply to public unauthenticated requests.
 
 ### Hologram Lab (v0.5.7 Slice 1 + optional Slice 2A, experimental)
 

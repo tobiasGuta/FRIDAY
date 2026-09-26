@@ -238,6 +238,17 @@
 - Remaining user-selected milestone #5: separately scoped read-only GitHub
   PR and workflow status. No favorites/recent-project history.
 
+## v0.5.13 — Public GitHub PR / CI status (experimental branch)
+
+- User-initiated public-only GitHub REST PR preview and repository-wide recent
+  workflow runs from a strictly parsed github.com origin of a registered repo.
+- Offline Projects view + separate opt-in voice lookup. No API credentials,
+  writes, background checks, PR-specific check inference or branch sync claims.
+- Windows and Ubuntu CI followed by real on-device UI/voice acceptance;
+  retain accepted v0.5.12 checkpoint and PR stack without merging.
+- This completes the five selected exploration ideas; favorites/recent project
+  history remain excluded. Private-repository auth requires a distinct review.
+
 ## Later
 
 - Wake word, local speech pipeline (STT -> LLM -> TTS), persistent SQLite memory.

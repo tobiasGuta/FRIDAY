@@ -59,6 +59,7 @@ from friday.schedule import (
     read_worker_health,
 )
 from friday.tools.daily_briefing import DailyBriefingService, briefing_display_lines
+from friday.tools.github_status import GitHubReadError, PublicGitHubStatus
 from friday.tools.project_launcher import ProjectLauncher
 from friday.tools.project_status import ProjectGitStatus, ProjectStatusError
 from friday.tools.project_voice import ProjectLaunchProposals
@@ -326,6 +327,26 @@ class DailyBriefingThread(QThread):
         self.completed.emit(snapshot)
 
 
+class GitHubStatusThread(QThread):
+    """On-demand public API reads never block the Qt event loop."""
+
+    completed = Signal(object)
+
+    def __init__(self, service: PublicGitHubStatus, project_id: str) -> None:
+        super().__init__()
+        self.service = service
+        self.project_id = project_id
+
+    def run(self) -> None:
+        try:
+            result = self.service.read(self.project_id)
+        except GitHubReadError as exc:
+            result = {"status": "error", "error": exc.code}
+        except Exception:
+            result = {"status": "error", "error": "github_unavailable"}
+        self.completed.emit(result)
+
+
 class ProjectStatusThread(QThread):
     """Run bounded, read-only Git inspection away from the Qt event loop."""
 
@@ -366,8 +387,10 @@ class DesktopThread(QThread):
         briefing: bool = False,
         briefing_academic: bool = False,
         briefing_reminders: bool = False,
+        github: bool = False,
     ) -> None:
         super().__init__()
+        self.github = github
         self.briefing = briefing
         self.briefing_academic = briefing_academic
         self.briefing_reminders = briefing_reminders
@@ -422,6 +445,10 @@ class DesktopThread(QThread):
                 )
                 if self.projects and self.project_catalog is not None else None
             )
+            github_service = (
+                PublicGitHubStatus(self.project_catalog)
+                if self.github and self.project_catalog is not None else None
+            )
             briefing_service = (
                 DailyBriefingService(
                     include_academic=self.briefing_academic,
@@ -439,6 +466,8 @@ class DesktopThread(QThread):
                     reminder_approval=approval,
                     project_proposals=project_proposals,
                     daily_briefing=briefing_service,
+                    github_status=github_service,
+                    github_catalog=self.project_catalog if github_service else None,
                     enable_academic_calendar=self.academic,
                 ),
                 queue_size=settings.event_queue_size,
@@ -495,6 +524,9 @@ class DesktopWindow(QMainWindow):
         self._project_status_service = ProjectGitStatus(self._projects)
         self._project_status_thread: ProjectStatusThread | None = None
         self._project_status_id: str | None = None
+        self._github_service = PublicGitHubStatus(self._projects)
+        self._github_thread: GitHubStatusThread | None = None
+        self._github_project_id: str | None = None
         self._briefing_service = DailyBriefingService()
         self._briefing_thread: DailyBriefingThread | None = None
         self._input_device = input_device
@@ -1505,6 +1537,14 @@ class DesktopWindow(QMainWindow):
         )
         self.project_voice_option.setChecked(False)
         layout.addWidget(self.project_voice_option)
+        self.github_voice_option = QCheckBox(
+            "Enable public GitHub PR / CI voice lookup (next connection; "
+            "requires voice project requests)"
+        )
+        self.github_voice_option.setChecked(False)
+        self.github_voice_option.setEnabled(False)
+        self.project_voice_option.toggled.connect(self._github_voice_gate)
+        layout.addWidget(self.github_voice_option)
         self.project_list = QListWidget()
         self.project_list.setMinimumHeight(220)
         self.project_list.currentItemChanged.connect(self._project_selection_changed)
@@ -1542,6 +1582,19 @@ class DesktopWindow(QMainWindow):
         )
         status_actions.addWidget(self.project_status_detail, 1)
         layout.addLayout(status_actions)
+        github_actions = QHBoxLayout()
+        self.github_check_button = QPushButton("Check public GitHub PR / CI")
+        self.github_check_button.clicked.connect(self._check_github_status)
+        github_actions.addWidget(self.github_check_button)
+        self.github_notice = self._plain_label(
+            "On demand only. Uses this project's public github.com origin; "
+            "two unauthenticated API reads, no credentials or GitHub writes."
+        )
+        github_actions.addWidget(self.github_notice, 1)
+        layout.addLayout(github_actions)
+        self.github_items = QListWidget()
+        self.github_items.setMinimumHeight(150)
+        layout.addWidget(self.github_items)
         manager = QHBoxLayout()
         self.project_add_button = QPushButton("Add Project")
         self.project_add_button.clicked.connect(self._add_project)
@@ -1601,6 +1654,13 @@ class DesktopWindow(QMainWindow):
                 "For voice requests, check the option above before connecting or reconnecting."
             )
 
+    def _github_voice_gate(self, enabled: bool) -> None:
+        self.github_voice_option.setEnabled(
+            enabled and self.project_voice_option.isEnabled()
+        )
+        if not enabled:
+            self.github_voice_option.setChecked(False)
+
     def _selected_project_id(self) -> str | None:
         item = self.project_list.currentItem()
         return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
@@ -1609,6 +1669,112 @@ class DesktopWindow(QMainWindow):
         self.project_status_detail.setText(
             "Select a project, then check its local Git status. No files are changed."
         )
+        self.github_items.clear()
+        self.github_notice.setText(
+            "Select a project, then click Check public GitHub PR / CI. "
+            "No network request is made until you click."
+        )
+
+    def _check_github_status(self) -> None:
+        if self._github_thread is not None or self._quitting or self._closing:
+            return
+        project_id = self._selected_project_id()
+        if project_id is None:
+            self.github_notice.setText("Select a registered project first.")
+            return
+        thread = GitHubStatusThread(self._github_service, project_id)
+        self._github_project_id = project_id
+        self._github_thread = thread
+        self.github_check_button.setEnabled(False)
+        self.github_notice.setText("Checking public GitHub PR and workflow data…")
+        thread.completed.connect(self._display_github_status)
+        thread.finished.connect(self._github_finished)
+        thread.start()
+
+    def _display_github_status(self, result: dict) -> None:
+        if self._quitting or self._closing or (
+            self._selected_project_id() != self._github_project_id
+        ):
+            return
+        self.github_items.clear()
+        errors = {
+            "unknown_project": "Project no longer registered; refresh Projects.",
+            "not_repository_root": "Select the Git repository root, not a nested folder.",
+            "git_unavailable": "Git is unavailable.",
+            "git_unavailable_or_not_repository": "No usable Git repository or origin.",
+            "unsupported_origin": "This project has no supported github.com origin.",
+            "github_public_repo_unavailable": (
+                "GitHub repository is not publicly available or was not found."
+            ),
+            "github_rate_limited_or_forbidden": (
+                "GitHub API limited or denied this unauthenticated request."
+            ),
+            "github_unreachable": "GitHub could not be reached.",
+        }
+        if "repository" not in result:
+            self.github_notice.setText(
+                errors.get(result.get("error"), "Public GitHub lookup unavailable.")
+            )
+            return
+        self.github_notice.setText(
+            f"Public GitHub: {result['repository']} · requested "
+            f"{result['checked_local']}. No authenticated or private access."
+        )
+        pulls = result["pulls"]
+        if pulls["state"] == "ok":
+            self.github_items.addItem("Open PR preview · most recently updated first")
+            if not pulls["items"]:
+                self.github_items.addItem("No open PRs returned for this public repository.")
+            for item in pulls["items"]:
+                flag = " [draft]" if item["draft"] else ""
+                self.github_items.addItem(
+                    f"PR #{item['number']}{flag} · {item['title']}"
+                )
+            if pulls["more"]:
+                self.github_items.addItem("More open PRs exist; showing ten.")
+        else:
+            self.github_items.addItem(
+                "PR lookup unavailable: "
+                + errors.get(pulls["error"], "GitHub did not return PR data.")
+            )
+        runs = result["workflows"]
+        if runs["state"] == "ok":
+            self.github_items.addItem(
+                "Latest workflow runs across branches · not PR-specific checks"
+            )
+            if not runs["items"]:
+                self.github_items.addItem("No recent Actions runs returned.")
+            for item in runs["items"]:
+                conclusion = (
+                    item["conclusion"] if item["status"] == "completed"
+                    else "not finished"
+                )
+                self.github_items.addItem(
+                    f"{item['name']} · {item['branch']} · "
+                    f"{item['status']} / {conclusion} · {item['event']}"
+                )
+            if runs["more"]:
+                self.github_items.addItem("More runs exist; showing five.")
+        else:
+            self.github_items.addItem(
+                "Workflow lookup unavailable: "
+                + errors.get(runs["error"], "GitHub did not return workflow data.")
+            )
+
+    def _github_finished(self) -> None:
+        if self._github_thread is not None:
+            self._github_thread.deleteLater()
+            self._github_thread = None
+        self._github_project_id = None
+        self.github_check_button.setEnabled(not self._quitting and not self._closing)
+        if self._quitting:
+            self._finish_quit()
+        elif self._closing and (
+            self._worker is None and self._scheduler is None
+            and self._academic_sync is None and self._project_status_thread is None
+            and self._hotkey_thread is None and self._briefing_thread is None
+        ):
+            self.close()
 
     def _check_project_status(self) -> None:
         if self._project_status_thread is not None or self._quitting or self._closing:
@@ -2036,6 +2202,7 @@ class DesktopWindow(QMainWindow):
             self._worker is not None or self._scheduler is not None
             or self._academic_sync is not None or self._project_status_thread is not None
             or self._hotkey_thread is not None or self._briefing_thread is not None
+            or self._github_thread is not None
         ):
             return
         self._health_timer.stop()
@@ -2405,6 +2572,10 @@ class DesktopWindow(QMainWindow):
             state in {"Disconnected", "Connection failed", *recoverable}
             and not self._quitting and not self._closing
         )
+        self.github_voice_option.setEnabled(
+            self.project_voice_option.isChecked()
+            and self.project_voice_option.isEnabled()
+        )
         self.academic_voice_option.setEnabled(
             self._academic_cache_ready
             and state in {"Disconnected", "Connection failed", *recoverable}
@@ -2431,6 +2602,10 @@ class DesktopWindow(QMainWindow):
             academic=self.academic_voice_option.isChecked(),
             projects=self.project_voice_option.isChecked(),
             project_catalog=self._projects,
+            github=(
+                self.project_voice_option.isChecked()
+                and self.github_voice_option.isChecked()
+            ),
             briefing=self.briefing_voice_option.isChecked(),
             briefing_academic=self.academic_voice_option.isChecked(),
             briefing_reminders=self.reminder_option.isChecked(),
@@ -2619,6 +2794,7 @@ class DesktopWindow(QMainWindow):
             self._worker is not None or self._scheduler is not None
             or self._academic_sync is not None or self._project_status_thread is not None
             or self._hotkey_thread is not None or self._briefing_thread is not None
+            or self._github_thread is not None
         ):
             self._closing = True
             if self._hotkey_thread is not None:
