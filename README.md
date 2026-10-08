@@ -6,6 +6,42 @@ No distribution license has been selected yet. Repository visibility is not a gr
 
 FRIDAY owns the application lifecycle, event types, provider interface and configuration. Gemini Live is an optional provider; a deterministic fake provider enables offline tests. The eventual local voice provider can implement the same contract without leaking SDK-specific types into the core.
 
+## Experimental v0.6 read-only agent preview (feature branch only)
+
+FRIDAY now has an explicitly invoked **text agent** with a bounded planning loop.
+This is a preview, **not** autonomous desktop control, persistent memory or
+a voice-connected agent. The existing v0.5.6 voice/desktop experience is unchanged.
+
+```bash
+# No model API key, microphone, or network; deterministic demo
+python -m friday agent --goal "Check my computer Python version"
+python -m friday agent --goal "List workspace files" --workspace .
+
+# GitHub lookups require explicit scope AND network opt-in (public repositories only)
+python -m friday agent --goal "Review GitHub repo and recent commits" \
+  --github-repo tobiasGuta/FRIDAY --allow-network
+
+# Optional real planner; makes paid Gemini requests and shares goal/tool observations
+python -m friday agent --goal "Summarize my repo's recent commits" \
+  --provider gemini --github-repo tobiasGuta/FRIDAY --allow-network
+```
+
+The default `fake` planner is a deterministic demonstration, not an intelligent
+goal solver. `--provider gemini` uses `FRIDAY_SEARCH_MODEL` (or `--model`) and
+requires `GEMINI_API_KEY` and the optional `gemini` dependency. Every decision
+can incur a separate model request. GitHub uses a fixed public API with no token
+or private-repository support. No network is used without `--allow-network`
+for GitHub or explicitly selecting the Gemini provider.
+
+Safety: at most 4 decisions by default (maximum 6), no repeated tool requests,
+empty model-supplied tool arguments only, strict read-only tool registry,
+no arbitrary paths/URLs/commands from model output, no shell execution, no file
+content reads/writes, no browser automation and no background actions.
+Workspace listings show only up to 20 non-hidden, non-symlink top-level names.
+A failure or denied request stops the run. Current tool results are
+**untrusted observations**, not instructions, and no raw tool data is persisted.
+This preview does not grant any capabilities to the existing Gemini Live voice mode.
+
 ## What works today (v0.5.6)
 
 - `friday doctor`: safe configuration diagnostics (never prints your API key).
