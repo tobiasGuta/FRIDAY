@@ -180,3 +180,19 @@
 - Typed tool registry with human approval, per-action policy and audit logs.
 - Session resumption and cost/usage telemetry.
 - Local desktop interface and hybrid routing only after the core audio path is stable.
+
+## v0.6 experimental agent foundation (feature-branch preview)
+
+- Add an explicit text-only `friday agent` command, separate from Gemini Live and UI.
+- Provider-neutral, bounded planner step loop and strict app-owned read-only registry.
+- Deterministic offline demo and separately opt-in Gemini JSON decision adapter.
+- Human-selected workspace listing (top-level names only), fixed public GitHub metadata
+  and recent commit subjects behind explicit network opt-in.
+- Deny model-provided paths, URLs, commands, repeats, side effects and unknown tools;
+  use a bounded context and failure-closed execution.
+- Offline tests for permissions, malicious requests, argument validation and CLI.
+- **Not included:** OS automation, shell execution, repository writes, authentication,
+  voice-to-agent routing, automatic approval, persistent memories, background work,
+  or unreviewed application interactions.
+- Future slices require user-facing exact-action approval and OS sandboxing
+  before considering any actions that change computer state.
