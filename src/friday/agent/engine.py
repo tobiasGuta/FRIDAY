@@ -63,7 +63,9 @@ class AgentEngine:
             try:
                 proposal = self.planner.next_action(goal, tuple(observations), allowed)
             except Exception:
-                return AgentRun("planner_error", "Planner failed; no further tools ran.", tuple(observations))
+                return AgentRun(
+                    "planner_error", "Planner failed; no further tools ran.", tuple(observations)
+                )
             if not isinstance(proposal, Mapping):
                 return AgentRun("blocked", "Invalid planner decision.", tuple(observations))
             if proposal.get("kind") == "finish" and set(proposal) == {"kind", "answer"}:
