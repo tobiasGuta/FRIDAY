@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import platform
 import re
-import sys
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
@@ -123,7 +122,10 @@ def build_agent_registry(
         root = workspace.resolve(strict=True)
         registry.register(ToolSpec(
             name="workspace_entries",
-            description="List at most 20 non-hidden immediate names in the explicitly selected workspace.",
+            description=(
+                "List at most 20 non-hidden immediate names "
+                "in the explicitly selected workspace."
+            ),
             arguments=NoArguments,
             handler=lambda _args: _workspace_listing(root),
             notice="Listed top-level workspace names without reading file contents",
