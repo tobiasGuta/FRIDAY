@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import json
 import logging
 import tempfile
 import wave
@@ -584,6 +585,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("devices", help="List microphone and speaker devices")
     sub.add_parser("clock", help="Read the computer local clock offline (no API usage)")
     sub.add_parser("tools", help="List enabled tool capabilities offline (no API usage)")
+    agent = sub.add_parser("agent", help="Explicit bounded, read-only text agent preview")
+    agent.add_argument("--goal", required=True, help="Goal (1-500 characters)")
+    agent.add_argument("--provider", choices=("fake", "gemini"), default="fake")
+    agent.add_argument("--model", help="Gemini text model override (paid, opt-in)")
+    agent.add_argument("--max-steps", type=int, default=4, help="Maximum decisions (1-6)")
+    agent.add_argument("--workspace", type=Path, help="Directory to list names in (no file reads)")
+    agent.add_argument("--github-repo", help="Explicit public GitHub owner/repo")
+    agent.add_argument(
+        "--allow-network", action="store_true", help="Allow GETs to GitHub's fixed public API"
+    )
     demo = sub.add_parser("demo", help="Run the no-network fake-provider conversation")
     demo.add_argument("--once", help="Run one fake turn non-interactively")
     live = sub.add_parser("live", help="Opt-in Gemini Live diagnostic (uses your API key)")
@@ -686,6 +697,34 @@ def main(argv: list[str] | None = None) -> int:
         print("Audio devices: available through optional voice dependency (run friday devices)")
         return 0
     try:
+        if args.command == "agent":
+            from friday.agent.engine import AgentEngine
+            from friday.agent.planners import DemoPlanner, GeminiPlanner
+            from friday.agent.tools import build_agent_registry
+
+            registry = build_agent_registry(
+                workspace=args.workspace, github_repo=args.github_repo,
+                allow_network=args.allow_network,
+            )
+            if args.provider == "gemini":
+                try:
+                    planner = GeminiPlanner(
+                        api_key=settings.require_gemini_key(),
+                        model=args.model or settings.search_model,
+                    )
+                except ModuleNotFoundError:
+                    print("Install Gemini support: python -m pip install -e '.[gemini]'")
+                    return 1
+                print("Gemini planner selected: paid requests; goal and observations leave device.")
+            else:
+                planner = DemoPlanner()
+                print("Deterministic offline demo selected (not an intelligent planner).")
+            run = AgentEngine(planner, registry, max_steps=args.max_steps).run(args.goal)
+            for observation in run.observations:
+                print(f"TOOL {observation.tool}: "
+                      f"{json.dumps(observation.result, ensure_ascii=True)}")
+            print(f"AGENT [{run.status}]: {run.answer}")
+            return 0 if run.status == "completed" else 1
         if args.command == "schedule":
             return _schedule_cli(args)
         if args.command == "tools":
