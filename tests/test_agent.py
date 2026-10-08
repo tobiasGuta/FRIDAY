@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from friday.agent import tools as agent_tools
 from friday.agent.engine import AgentEngine
 from friday.agent.planners import DemoPlanner
-from friday.agent import tools as agent_tools
 from friday.agent.tools import build_agent_registry
 from friday.tools.registry import NoArguments, ToolPolicy, ToolRegistry, ToolSpec
 from friday.ui.cli import main
@@ -31,7 +31,11 @@ def test_workspace_is_explicit_names_only(tmp_path):
     (tmp_path / ".env").write_text("SECRET_DO_NOT_READ")
     (tmp_path / "normal.py").write_text("SECRET_FILE_BODY")
     (tmp_path / "subdir").mkdir()
-    (tmp_path / "outside_link").symlink_to(tmp_path / "normal.py")
+    try:
+        (tmp_path / "outside_link").symlink_to(tmp_path / "normal.py")
+    except OSError:
+        # Some Windows runners disallow symlink creation without Developer Mode.
+        pass
     registry = build_agent_registry(workspace=tmp_path)
     run = AgentEngine(DemoPlanner(), registry).run("List workspace files")
     assert run.status == "completed"
